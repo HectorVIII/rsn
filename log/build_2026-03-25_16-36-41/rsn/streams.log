@@ -1,0 +1,56 @@
+[0.372s] Invoking command in '/home/huitao/ros2_ws/src/rsn': PYTHONPATH=/home/huitao/ros2_ws/src/rsn/build/rsn/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/rsn build --build-base /home/huitao/ros2_ws/src/rsn/build/rsn/build install --record /home/huitao/ros2_ws/src/rsn/build/rsn/install.log --single-version-externally-managed install_data
+[0.502s] running egg_info
+[0.502s] creating build/rsn/rsn.egg-info
+[0.502s] writing build/rsn/rsn.egg-info/PKG-INFO
+[0.502s] writing dependency_links to build/rsn/rsn.egg-info/dependency_links.txt
+[0.502s] writing entry points to build/rsn/rsn.egg-info/entry_points.txt
+[0.503s] writing requirements to build/rsn/rsn.egg-info/requires.txt
+[0.503s] writing top-level names to build/rsn/rsn.egg-info/top_level.txt
+[0.503s] writing manifest file 'build/rsn/rsn.egg-info/SOURCES.txt'
+[0.504s] reading manifest file 'build/rsn/rsn.egg-info/SOURCES.txt'
+[0.504s] adding license file 'LICENSE'
+[0.504s] writing manifest file 'build/rsn/rsn.egg-info/SOURCES.txt'
+[0.504s] running build
+[0.504s] running build_py
+[0.505s] creating /home/huitao/ros2_ws/src/rsn/build/rsn/build
+[0.505s] creating /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib
+[0.505s] creating /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+[0.505s] copying rsn/__init__.py -> /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+[0.505s] copying rsn/gripper_node.py -> /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+[0.505s] copying rsn/demo_cordinator.py -> /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+[0.505s] copying rsn/zed_hand_node.py -> /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+[0.505s] copying rsn/xarm_controller_node.py -> /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+[0.505s] copying rsn/arm_node.py -> /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+[0.505s] running install
+[0.505s] running install_lib
+[0.506s] creating /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+[0.506s] copying /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn/__init__.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+[0.506s] copying /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn/gripper_node.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+[0.506s] copying /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn/demo_cordinator.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+[0.506s] copying /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn/zed_hand_node.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+[0.506s] copying /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn/xarm_controller_node.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+[0.506s] copying /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn/arm_node.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+[0.506s] byte-compiling /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn/__init__.py to __init__.cpython-310.pyc
+[0.506s] byte-compiling /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn/gripper_node.py to gripper_node.cpython-310.pyc
+[0.507s] byte-compiling /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn/demo_cordinator.py to demo_cordinator.cpython-310.pyc
+[0.507s] byte-compiling /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn/zed_hand_node.py to zed_hand_node.cpython-310.pyc
+[0.508s] byte-compiling /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn/xarm_controller_node.py to xarm_controller_node.cpython-310.pyc
+[0.509s] byte-compiling /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn/arm_node.py to arm_node.cpython-310.pyc
+[0.509s] running install_data
+[0.509s] creating /home/huitao/ros2_ws/src/rsn/install/rsn/share/ament_index
+[0.509s] creating /home/huitao/ros2_ws/src/rsn/install/rsn/share/ament_index/resource_index
+[0.509s] creating /home/huitao/ros2_ws/src/rsn/install/rsn/share/ament_index/resource_index/packages
+[0.509s] copying resource/rsn -> /home/huitao/ros2_ws/src/rsn/install/rsn/share/ament_index/resource_index/packages
+[0.509s] copying package.xml -> /home/huitao/ros2_ws/src/rsn/install/rsn/share/rsn
+[0.509s] creating /home/huitao/ros2_ws/src/rsn/install/rsn/share/rsn/config
+[0.509s] copying config/xarm_controller_params.yaml -> /home/huitao/ros2_ws/src/rsn/install/rsn/share/rsn/config
+[0.509s] creating /home/huitao/ros2_ws/src/rsn/install/rsn/share/rsn/launch
+[0.509s] copying launch/handover_demo.launch.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/share/rsn/launch
+[0.509s] running install_egg_info
+[0.510s] Copying build/rsn/rsn.egg-info to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn-0.0.0-py3.10.egg-info
+[0.511s] running install_scripts
+[0.521s] Installing demo_coordinator script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+[0.521s] Installing xarm_controller_node script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+[0.521s] Installing zed_hand_node script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+[0.521s] writing list of installed files to '/home/huitao/ros2_ws/src/rsn/build/rsn/install.log'
+[0.532s] Invoked command in '/home/huitao/ros2_ws/src/rsn' returned '0': PYTHONPATH=/home/huitao/ros2_ws/src/rsn/build/rsn/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/rsn build --build-base /home/huitao/ros2_ws/src/rsn/build/rsn/build install --record /home/huitao/ros2_ws/src/rsn/build/rsn/install.log --single-version-externally-managed install_data

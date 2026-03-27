@@ -1,0 +1,5 @@
+[console_scripts]
+demo_coordinator = rsn.demo_cordinator:main
+xarm_controller_node = rsn.xarm_controller_node:main
+zed_hand_node = rsn.zed_hand_node:main
+
