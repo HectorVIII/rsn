@@ -9,6 +9,11 @@ from std_srvs.srv import Trigger
 
 import pyzed.sl as sl
 
+try:
+    import mediapipe as mp
+except ImportError:
+    mp = None
+
 
 class ZedHandNode(Node):
     def __init__(self):
@@ -16,15 +21,39 @@ class ZedHandNode(Node):
 
         # ===== Parameters =====
         self.declare_parameter('camera_fps', 30)
-        self.declare_parameter('stability_duration', 1.0)      # seconds
-        self.declare_parameter('stability_threshold', 0.08)    # meters
+
+        # Stability logic: EMA + stable frame count
+        self.declare_parameter('ema_alpha', 0.4)
+        self.declare_parameter('position_tolerance', 0.01)         # meters, max allowed EMA diff to count as stable
+        self.declare_parameter('stable_frames_required', 45)        # 45 frames at 30 fps ~= 1.5 s
+
+        # MediaPipe hand detection parameters
+        self.declare_parameter('max_num_hands', 2)
+        self.declare_parameter('min_detection_confidence', 0.6)
+        self.declare_parameter('min_tracking_confidence', 0.6)
+        self.declare_parameter('target_hand_label', 'Left')         # For current ZED view, Left selects real right hand
+
+        # 3D point extraction parameters
+        self.declare_parameter('depth_window_radius', 2)            # pixel window half-size
+        self.declare_parameter('depth_min_valid_points', 5)
+
         self.declare_parameter('publish_topic', '/right_hand_pose_base')
-        self.declare_parameter('exit_delay_after_publish', 1.0)  # seconds
+        self.declare_parameter('exit_delay_after_publish', 1.0)     # seconds
         self.declare_parameter('show_viewer', True)
 
         self.camera_fps = int(self.get_parameter('camera_fps').value)
-        self.stability_duration = float(self.get_parameter('stability_duration').value)
-        self.stability_threshold = float(self.get_parameter('stability_threshold').value)
+        self.ema_alpha = float(self.get_parameter('ema_alpha').value)
+        self.position_tolerance = float(self.get_parameter('position_tolerance').value)
+        self.stable_frames_required = int(self.get_parameter('stable_frames_required').value)
+
+        self.max_num_hands = int(self.get_parameter('max_num_hands').value)
+        self.min_detection_confidence = float(self.get_parameter('min_detection_confidence').value)
+        self.min_tracking_confidence = float(self.get_parameter('min_tracking_confidence').value)
+        self.target_hand_label = str(self.get_parameter('target_hand_label').value)
+
+        self.depth_window_radius = int(self.get_parameter('depth_window_radius').value)
+        self.depth_min_valid_points = int(self.get_parameter('depth_min_valid_points').value)
+
         self.publish_topic = str(self.get_parameter('publish_topic').value)
         self.exit_delay_after_publish = float(self.get_parameter('exit_delay_after_publish').value)
         self.show_viewer = bool(self.get_parameter('show_viewer').value)
@@ -50,16 +79,34 @@ class ZedHandNode(Node):
         # ===== ZED objects =====
         self.zed = sl.Camera()
         self.runtime_params = sl.RuntimeParameters()
-        self.bodies = sl.Bodies()
         self.image = sl.Mat()
+        self.point_cloud = sl.Mat()
 
-        # ===== Stability state =====
-        self.stable_start_time = None
-        self.stable_ref_cam = None
+        # ===== MediaPipe =====
+        self.mp_hands = mp.solutions.hands
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.mp_drawing_styles = mp.solutions.drawing_styles
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=self.max_num_hands,
+            min_detection_confidence=self.min_detection_confidence,
+            min_tracking_confidence=self.min_tracking_confidence,
+            model_complexity=1,
+        )
+
+        # ===== EMA + stable frame state =====
+        self.ema = None
+        self.last_ema = None
+        self.stable_frames = 0
 
         # ===== One-shot state =====
         self.published_once = False
         self.detection_enabled = False
+
+        # ===== Debug / viewer state =====
+        self.last_hand_uv = None
+        self.last_hand_score = 0.0
+        self.last_point_count = 0
 
         # ===== Init camera =====
         self._init_zed()
@@ -70,8 +117,12 @@ class ZedHandNode(Node):
 
         self.get_logger().info('zed_hand_node started.')
         self.get_logger().info(f'Publish topic: {self.publish_topic}')
-        self.get_logger().info(f'Stability duration: {self.stability_duration:.2f} s')
-        self.get_logger().info(f'Stability threshold: {self.stability_threshold:.3f} m')
+        self.get_logger().info(f'EMA alpha: {self.ema_alpha:.3f}')
+        self.get_logger().info(f'Position tolerance: {self.position_tolerance:.4f} m')
+        self.get_logger().info(f'Stable frames required: {self.stable_frames_required}')
+        self.get_logger().info(f'Target hand label: {self.target_hand_label}')
+        self.get_logger().info('Target point: index fingertip (landmark 8)')
+        self.get_logger().info(f'Depth window radius: {self.depth_window_radius}')
         self.get_logger().info(f'Show viewer: {self.show_viewer}')
         self.get_logger().info('Mode: wait for /start_hand_detection, then publish once and exit.')
 
@@ -83,31 +134,13 @@ class ZedHandNode(Node):
         init_params.camera_fps = self.camera_fps
         init_params.coordinate_units = sl.UNIT.METER
         init_params.coordinate_system = sl.COORDINATE_SYSTEM.IMAGE
+        init_params.depth_mode = sl.DEPTH_MODE.ULTRA
 
         status = self.zed.open(init_params)
         if status != sl.ERROR_CODE.SUCCESS:
             raise RuntimeError(f'Failed to open ZED camera: {repr(status)}')
 
         self.get_logger().info('ZED camera opened successfully.')
-
-        positional_tracking_params = sl.PositionalTrackingParameters()
-        tracking_status = self.zed.enable_positional_tracking(positional_tracking_params)
-        if tracking_status != sl.ERROR_CODE.SUCCESS:
-            raise RuntimeError(f'Failed to enable positional tracking: {repr(tracking_status)}')
-
-        self.get_logger().info('Positional tracking enabled.')
-
-        body_params = sl.BodyTrackingParameters()
-        body_params.enable_tracking = True
-        body_params.enable_body_fitting = True
-        body_params.body_format = sl.BODY_FORMAT.BODY_34
-        body_params.detection_model = sl.BODY_TRACKING_MODEL.HUMAN_BODY_MEDIUM
-
-        body_status = self.zed.enable_body_tracking(body_params)
-        if body_status != sl.ERROR_CODE.SUCCESS:
-            raise RuntimeError(f'Failed to enable body tracking: {repr(body_status)}')
-
-        self.get_logger().info('Body tracking enabled with BODY_34.')
 
     def start_hand_detection_callback(self, request, response):
         self.get_logger().info('START_HAND_DETECTION command received')
@@ -124,16 +157,14 @@ class ZedHandNode(Node):
         if self.zed.grab(self.runtime_params) != sl.ERROR_CODE.SUCCESS:
             return
 
-        frame = None
-        if self.show_viewer:
-            self.zed.retrieve_image(self.image, sl.VIEW.LEFT)
-            frame = self.image.get_data().copy()
-            if frame is not None and len(frame.shape) == 3 and frame.shape[2] == 4:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        self.zed.retrieve_image(self.image, sl.VIEW.LEFT)
+        frame = self.image.get_data().copy()
+        if frame is not None and len(frame.shape) == 3 and frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
         # Idle mode: wait for explicit start signal
         if not self.detection_enabled:
-            if frame is not None:
+            if self.show_viewer and frame is not None:
                 self._draw_idle_overlay(frame)
                 cv2.imshow('ZED Right Hand Viewer', frame)
                 key = cv2.waitKey(1) & 0xFF
@@ -143,70 +174,77 @@ class ZedHandNode(Node):
                     rclpy.shutdown()
             return
 
-        # Detection enabled
-        self.zed.retrieve_bodies(self.bodies)
-        hand_cam, hand_uv = self._get_right_hand_position_and_uv()
+        self.zed.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
+
+        hand_cam, hand_uv, hand_score, annotated_frame = self._detect_target_hand(frame)
+        self.last_hand_uv = hand_uv
+        self.last_hand_score = hand_score
 
         status_text = 'NO HAND'
-        stable_elapsed = 0.0
 
         if hand_cam is None:
-            if self.stable_start_time is not None:
-                self.get_logger().info('Right hand lost. Resetting stability state.')
+            if self.stable_frames > 0:
+                self.get_logger().info('Target hand lost or depth invalid. Resetting EMA/stability state.')
             self._reset_stability()
         else:
-            now = time.time()
-
-            if self.stable_start_time is None:
-                self.stable_start_time = now
-                self.stable_ref_cam = hand_cam.copy()
-                self.get_logger().info(
-                    f'Right hand detected. Start timing. '
-                    f'cam = [{hand_cam[0]:.3f}, {hand_cam[1]:.3f}, {hand_cam[2]:.3f}] m'
-                )
-                status_text = 'TRACKING'
+            if self.ema is None:
+                self.ema = hand_cam.copy()
             else:
-                dist = np.linalg.norm(hand_cam - self.stable_ref_cam)
+                self.ema = self.ema_alpha * hand_cam + (1.0 - self.ema_alpha) * self.ema
 
-                if dist > self.stability_threshold:
-                    self.get_logger().info(
-                        f'Hand moved too much ({dist:.3f} m > {self.stability_threshold:.3f} m). Restarting timer.'
-                    )
-                    self.stable_start_time = now
-                    self.stable_ref_cam = hand_cam.copy()
-                    stable_elapsed = 0.0
-                    status_text = 'TRACKING'
+            if self.last_ema is None:
+                self.last_ema = self.ema.copy()
+                self.stable_frames = 1
+                status_text = 'TRACKING'
+                self.get_logger().info(
+                    f'Target hand detected. Start stable counting. '
+                    f'raw cam = [{hand_cam[0]:.3f}, {hand_cam[1]:.3f}, {hand_cam[2]:.3f}] m, '
+                    f'score = {hand_score:.3f}, valid_pts = {self.last_point_count}'
+                )
+            else:
+                diff = float(np.linalg.norm(self.ema - self.last_ema))
+                self.last_ema = self.ema.copy()
+
+                if diff <= self.position_tolerance:
+                    self.stable_frames += 1
                 else:
-                    stable_elapsed = now - self.stable_start_time
-                    status_text = 'TRACKING'
+                    self.get_logger().info(
+                        f'Hand moved too much (EMA diff {diff:.4f} m > '
+                        f'{self.position_tolerance:.4f} m). Restarting stable count.'
+                    )
+                    self.stable_frames = 1
 
-                    if stable_elapsed >= self.stability_duration:
-                        hand_base = self._transform_cam_to_base(hand_cam)
-                        self._publish_pose(hand_base)
+                status_text = 'TRACKING'
 
-                        self.published_once = True
-                        status_text = 'STABLE'
+            if self.stable_frames >= self.stable_frames_required:
+                hand_base = self._transform_cam_to_base(self.ema)
+                self._publish_pose(hand_base)
 
-                        self.get_logger().info(
-                            'Stable right hand confirmed and published once. '
-                            f'cam = [{hand_cam[0]:.3f}, {hand_cam[1]:.3f}, {hand_cam[2]:.3f}] m, '
-                            f'base = [{hand_base[0]:.3f}, {hand_base[1]:.3f}, {hand_base[2]:.3f}] m'
-                        )
+                self.published_once = True
+                status_text = 'STABLE'
 
-                        if frame is not None:
-                            self._draw_overlay(frame, hand_uv, hand_cam, status_text, stable_elapsed)
-                            cv2.imshow('ZED Right Hand Viewer', frame)
-                            cv2.waitKey(1)
+                self.get_logger().info(
+                    'Stable target hand confirmed and published once. '
+                    f'raw cam = [{hand_cam[0]:.3f}, {hand_cam[1]:.3f}, {hand_cam[2]:.3f}] m, '
+                    f'ema cam = [{self.ema[0]:.3f}, {self.ema[1]:.3f}, {self.ema[2]:.3f}] m, '
+                    f'base = [{hand_base[0]:.3f}, {hand_base[1]:.3f}, {hand_base[2]:.3f}] m, '
+                    f'score = {hand_score:.3f}, valid_pts = {self.last_point_count}'
+                )
 
-                        time.sleep(self.exit_delay_after_publish)
-                        self.get_logger().info('Publish completed. Exiting node...')
-                        self.destroy_node()
-                        rclpy.shutdown()
-                        return
+                if self.show_viewer and annotated_frame is not None:
+                    self._draw_overlay(annotated_frame, hand_cam, status_text)
+                    cv2.imshow('ZED Right Hand Viewer', annotated_frame)
+                    cv2.waitKey(1)
 
-        if frame is not None:
-            self._draw_overlay(frame, hand_uv, hand_cam, status_text, stable_elapsed)
-            cv2.imshow('ZED Right Hand Viewer', frame)
+                time.sleep(self.exit_delay_after_publish)
+                self.get_logger().info('Publish completed. Exiting node...')
+                self.destroy_node()
+                rclpy.shutdown()
+                return
+
+        if self.show_viewer and annotated_frame is not None:
+            self._draw_overlay(annotated_frame, hand_cam, status_text)
+            cv2.imshow('ZED Right Hand Viewer', annotated_frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == 27 or key == ord('q'):
@@ -214,51 +252,122 @@ class ZedHandNode(Node):
                 self.destroy_node()
                 rclpy.shutdown()
 
-    def _get_right_hand_position_and_uv(self):
+    def _detect_target_hand(self, frame_bgr):
         """
-        Use BODY_34 keypoint index 14 = RIGHT_WRIST.
+        Detect target hand in 2D with MediaPipe, then obtain 3D camera-frame point
+        from ZED point cloud around the selected fingertip pixel.
+
         Return:
-            best_point_3d: np.array([x, y, z]) in camera frame, meters
-            best_point_2d: np.array([u, v]) in image pixel coordinates
+            hand_3d: np.array([x, y, z]) in camera frame, meters
+            hand_2d: np.array([u, v]) in image pixel coordinates
+            score: handedness classification score
+            annotated_frame: BGR image for viewer
         """
-        if self.bodies is None or len(self.bodies.body_list) == 0:
-            return None, None
+        if frame_bgr is None:
+            return None, None, 0.0, None
 
-        best_point_3d = None
-        best_point_2d = None
-        best_dist = float('inf')
-        target_kp = 14  # RIGHT_WRIST
+        annotated = frame_bgr.copy()
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        results = self.hands.process(frame_rgb)
 
-        for body in self.bodies.body_list:
-            if body.keypoint is None or body.keypoint_2d is None:
+        if not results.multi_hand_landmarks or not results.multi_handedness:
+            self.last_point_count = 0
+            return None, None, 0.0, annotated
+
+        h, w = frame_bgr.shape[:2]
+        best = None
+
+        for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+            if len(handedness.classification) == 0:
                 continue
 
-            if len(body.keypoint) <= target_kp or len(body.keypoint_2d) <= target_kp:
+            cls = handedness.classification[0]
+            label = cls.label
+            score = float(cls.score)
+
+            self.mp_drawing.draw_landmarks(
+                annotated,
+                hand_landmarks,
+                self.mp_hands.HAND_CONNECTIONS,
+                self.mp_drawing_styles.get_default_hand_landmarks_style(),
+                self.mp_drawing_styles.get_default_hand_connections_style(),
+            )
+
+            if label != self.target_hand_label:
                 continue
 
-            kp3d = body.keypoint[target_kp]
-            kp2d = body.keypoint_2d[target_kp]
+            u, v = self._compute_target_pixel(hand_landmarks, w, h)
+            p_cam, valid_count = self._get_3d_point_from_window(u, v)
 
-            if kp3d is None or kp2d is None:
+            if p_cam is None:
                 continue
 
-            x, y, z = float(kp3d[0]), float(kp3d[1]), float(kp3d[2])
-            u, v = float(kp2d[0]), float(kp2d[1])
+            candidate = {
+                'p_cam': p_cam,
+                'uv': np.array([u, v], dtype=np.float64),
+                'score': score,
+                'valid_count': valid_count,
+            }
 
-            if not np.isfinite(x) or not np.isfinite(y) or not np.isfinite(z):
-                continue
-            if not np.isfinite(u) or not np.isfinite(v):
-                continue
-            if np.linalg.norm([x, y, z]) < 1e-6:
-                continue
+            if best is None or candidate['score'] > best['score']:
+                best = candidate
 
-            dist = np.linalg.norm([x, y, z])
-            if dist < best_dist:
-                best_dist = dist
-                best_point_3d = np.array([x, y, z], dtype=np.float64)
-                best_point_2d = np.array([u, v], dtype=np.float64)
+        if best is None:
+            self.last_point_count = 0
+            return None, None, 0.0, annotated
 
-        return best_point_3d, best_point_2d
+        self.last_point_count = best['valid_count']
+        return best['p_cam'], best['uv'], best['score'], annotated
+
+    def _compute_target_pixel(self, hand_landmarks, img_w, img_h):
+        """
+        Choose handover target in image plane.
+        Use index fingertip = landmark 8.
+        """
+        lm = hand_landmarks.landmark
+
+        x = float(lm[8].x)   # INDEX_FINGER_TIP
+        y = float(lm[8].y)
+
+        u = int(np.clip(round(x * img_w), 0, img_w - 1))
+        v = int(np.clip(round(y * img_h), 0, img_h - 1))
+        return u, v
+
+    def _get_3d_point_from_window(self, u, v):
+        """
+        Robustly estimate 3D camera-frame point from a pixel neighborhood.
+        Median is used to reduce outliers from noisy depth.
+        """
+        points = []
+        r = self.depth_window_radius
+
+        for dv in range(-r, r + 1):
+            for du in range(-r, r + 1):
+                uu = int(u + du)
+                vv = int(v + dv)
+                if uu < 0 or vv < 0:
+                    continue
+
+                err, value = self.point_cloud.get_value(uu, vv)
+                if err != sl.ERROR_CODE.SUCCESS:
+                    continue
+                if value is None or len(value) < 3:
+                    continue
+
+                x, y, z = float(value[0]), float(value[1]), float(value[2])
+                if not np.isfinite(x) or not np.isfinite(y) or not np.isfinite(z):
+                    continue
+                if np.linalg.norm([x, y, z]) < 1e-6:
+                    continue
+
+                points.append([x, y, z])
+
+        if len(points) < self.depth_min_valid_points:
+            return None, 0
+
+        pts = np.array(points, dtype=np.float64)
+        p_cam = np.median(pts, axis=0)
+        return p_cam, len(points)
 
     def _transform_cam_to_base(self, p_cam):
         p_cam_h = np.array([p_cam[0], p_cam[1], p_cam[2], 1.0], dtype=np.float64)
@@ -282,7 +391,7 @@ class ZedHandNode(Node):
         self.pose_pub.publish(msg)
 
     def _draw_idle_overlay(self, frame):
-        h, w = frame.shape[:2]
+        h, _ = frame.shape[:2]
         cv2.putText(
             frame,
             'WAITING FOR /start_hand_detection',
@@ -290,6 +399,24 @@ class ZedHandNode(Node):
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
             (0, 255, 255),
+            2
+        )
+        cv2.putText(
+            frame,
+            'MediaPipe Hands + ZED depth',
+            (20, 80),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2
+        )
+        cv2.putText(
+            frame,
+            'Target: index fingertip',
+            (20, 120),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
             2
         )
         cv2.putText(
@@ -302,18 +429,22 @@ class ZedHandNode(Node):
             2
         )
 
-    def _draw_overlay(self, frame, hand_uv, hand_cam, status_text, stable_elapsed):
+    def _draw_overlay(self, frame, hand_cam, status_text):
         h, w = frame.shape[:2]
 
-        if hand_uv is not None:
-            u, v = int(hand_uv[0]), int(hand_uv[1])
+        if self.last_hand_uv is not None:
+            u, v = int(self.last_hand_uv[0]), int(self.last_hand_uv[1])
             if 0 <= u < w and 0 <= v < h:
                 cv2.circle(frame, (u, v), 8, (0, 0, 255), -1)
                 cv2.circle(frame, (u, v), 16, (0, 255, 255), 2)
                 cv2.putText(
-                    frame, 'KP14',
+                    frame,
+                    'INDEX_TIP',
                     (u + 10, v - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 255),
+                    2
                 )
 
         cv2.putText(
@@ -328,7 +459,7 @@ class ZedHandNode(Node):
 
         cv2.putText(
             frame,
-            f'Stable: {stable_elapsed:.2f} / {self.stability_duration:.2f} s',
+            f'StableFrames: {self.stable_frames} / {self.stable_frames_required}',
             (20, 80),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
@@ -336,16 +467,67 @@ class ZedHandNode(Node):
             2
         )
 
+        cv2.putText(
+            frame,
+            f'Hand score: {self.last_hand_score:.3f}',
+            (20, 120),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 200, 0),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f'Valid depth pts: {self.last_point_count}',
+            (20, 160),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 200, 0),
+            2
+        )
+
         if hand_cam is not None:
             cv2.putText(
                 frame,
-                f'Cam XYZ: [{hand_cam[0]:.3f}, {hand_cam[1]:.3f}, {hand_cam[2]:.3f}] m',
-                (20, 120),
+                f'Raw Cam XYZ: [{hand_cam[0]:.3f}, {hand_cam[1]:.3f}, {hand_cam[2]:.3f}] m',
+                (20, 200),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
                 (255, 255, 255),
                 2
             )
+
+        if self.ema is not None:
+            cv2.putText(
+                frame,
+                f'EMA Cam XYZ: [{self.ema[0]:.3f}, {self.ema[1]:.3f}, {self.ema[2]:.3f}] m',
+                (20, 240),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (180, 255, 180),
+                2
+            )
+
+        cv2.putText(
+            frame,
+            f'Target hand: {self.target_hand_label}',
+            (20, 280),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (200, 200, 255),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            'Target point: index fingertip',
+            (20, 320),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (200, 255, 200),
+            2
+        )
 
         cv2.putText(
             frame,
@@ -358,8 +540,12 @@ class ZedHandNode(Node):
         )
 
     def _reset_stability(self):
-        self.stable_start_time = None
-        self.stable_ref_cam = None
+        self.ema = None
+        self.last_ema = None
+        self.stable_frames = 0
+        self.last_hand_uv = None
+        self.last_hand_score = 0.0
+        self.last_point_count = 0
 
     def destroy_node(self):
         self.get_logger().info('Shutting down zed_hand_node...')
@@ -369,9 +555,13 @@ class ZedHandNode(Node):
             pass
 
         try:
+            if hasattr(self, 'hands') and self.hands is not None:
+                self.hands.close()
+        except Exception as e:
+            self.get_logger().warn(f'Exception during MediaPipe shutdown: {e}')
+
+        try:
             if hasattr(self, 'zed'):
-                self.zed.disable_body_tracking()
-                self.zed.disable_positional_tracking()
                 self.zed.close()
         except Exception as e:
             self.get_logger().warn(f'Exception during ZED shutdown: {e}')

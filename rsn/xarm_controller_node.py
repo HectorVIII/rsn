@@ -239,6 +239,12 @@ class XArmControllerNode(Node):
         y_mm = self.latest_hand_pose.position.y * 1000.0
         z_mm = self.latest_hand_pose.position.z * 1000.0 + self.hand_hover_offset_mm
 
+        # Log the raw hand pose and the computed hover pose for debugging
+        self.get_logger().info(
+            f'[hover] raw y from topic = {self.latest_hand_pose.position.y:.4f} m '
+            f'→ y_mm = {y_mm:.1f} mm'
+        )
+
         pose = [
             x_mm,
             y_mm,

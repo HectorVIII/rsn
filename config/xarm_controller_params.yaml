@@ -14,15 +14,15 @@
     gripper_speed: 2000
     
     hand_topic: "/right_hand_pose_base"
-    hand_hover_offset_mm: 40.0
+    hand_hover_offset_mm: 20.0
     hand_roll: 180.0
     hand_pitch: 0.0
     hand_yaw: 90.0
 
     release_wait_seconds: 3.0
-    retreat_z_offset_mm: 50.0
+    retreat_z_offset_mm: 30.0
 
-    release_force_threshold_n: 10.0
+    release_force_threshold_n: 8.0
     release_hold_time_s: 0.2
     release_timeout_s: 10.0
     release_use_force_magnitude: true
