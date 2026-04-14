@@ -28,7 +28,7 @@ class XArmControllerNode(Node):
 
         # Hand-guided motion parameters
         self.declare_parameter('hand_topic', '/right_hand_pose_base')
-        self.declare_parameter('hand_hover_offset_mm', 20.0)
+        self.declare_parameter('hand_hover_offset_mm', 50.0)
         self.declare_parameter('hand_roll', 180.0)
         self.declare_parameter('hand_pitch', 0.0)
         self.declare_parameter('hand_yaw', 90.0)
@@ -73,6 +73,7 @@ class XArmControllerNode(Node):
         # Latest hand pose cache
         self.latest_hand_pose = None
         self.last_hand_hover_pose = None
+        self.last_hand_target_pose = None
 
         self.get_logger().info(f'Loaded P0: {self.p0}')
         self.get_logger().info(f'Loaded P1: {self.p1}')
@@ -229,22 +230,31 @@ class XArmControllerNode(Node):
             f'z={msg.pose.position.z:.4f} m'
         )
 
-    def _build_hand_hover_pose(self):
+    def _build_hand_approach_poses(self):
         if self.latest_hand_pose is None:
-            return None, 'No hand pose received yet.'
+            return None, None, 'No hand pose received yet.'
 
         # Topic is in meters -> xArm expects millimeters
         x_mm = self.latest_hand_pose.position.x * 1000.0
         y_mm = self.latest_hand_pose.position.y * 1000.0
-        z_mm = self.latest_hand_pose.position.z * 1000.0 + self.hand_hover_offset_mm
+        z_mm = self.latest_hand_pose.position.z * 1000.0
 
-        # Log the raw hand pose and the computed hover pose for debugging
         self.get_logger().info(
-            f'[hover] raw y from topic = {self.latest_hand_pose.position.y:.4f} m '
-            f'→ y_mm = {y_mm:.1f} mm'
+            f'[hand] raw pose from topic: x={self.latest_hand_pose.position.x:.4f} m, '
+            f'y={self.latest_hand_pose.position.y:.4f} m, '
+            f'z={self.latest_hand_pose.position.z:.4f} m'
         )
 
-        pose = [
+        hover_pose = [
+            x_mm,
+            y_mm,
+            z_mm + self.hand_hover_offset_mm,
+            self.hand_roll,
+            self.hand_pitch,
+            self.hand_yaw,
+        ]
+
+        target_pose = [
             x_mm,
             y_mm,
             z_mm,
@@ -252,7 +262,10 @@ class XArmControllerNode(Node):
             self.hand_pitch,
             self.hand_yaw,
         ]
-        return pose, f'Built hover pose from latest hand pose: {pose}'
+
+        return hover_pose, target_pose, (
+            f'Built approach poses from latest hand pose: hover={hover_pose}, target={target_pose}'
+        )
     
     def _build_retreat_pose(self):
         if self.last_hand_hover_pose is None:
@@ -287,24 +300,36 @@ class XArmControllerNode(Node):
     def move_to_hand_callback(self, request, response):
         self.get_logger().info('MOVE_TO_HAND command received')
 
-        pose, build_msg = self._build_hand_hover_pose()
+        hover_pose, target_pose, build_msg = self._build_hand_approach_poses()
         self.get_logger().info(build_msg)
 
-        if pose is None:
+        if hover_pose is None or target_pose is None:
             response.success = False
             response.message = build_msg
             self.get_logger().error(build_msg)
             return response
 
-        ok, msg = self._move_to_pose(pose)
-        response.success = ok
-        response.message = msg
+        self.get_logger().info('Stage 1/2: move to hand upper hover pose')
+        ok_hover, msg_hover = self._move_to_pose(hover_pose)
+        if not ok_hover:
+            response.success = False
+            response.message = f'Failed at hover stage: {msg_hover}'
+            self.get_logger().error(response.message)
+            return response
 
-        if ok:
-            self.last_hand_hover_pose = list(pose)  # Cache the last successful hover pose
-            self.get_logger().info(msg)
+        self.last_hand_hover_pose = list(hover_pose)
+        self.get_logger().info(msg_hover)
+
+        self.get_logger().info('Stage 2/2: descend to hand target pose')
+        ok_target, msg_target = self._move_to_pose(target_pose)
+        response.success = ok_target
+        response.message = msg_target
+
+        if ok_target:
+            self.last_hand_target_pose = list(target_pose)
+            self.get_logger().info(msg_target)
         else:
-            self.get_logger().error(msg)
+            self.get_logger().error(msg_target)
 
         return response
     
