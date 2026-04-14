@@ -23,22 +23,22 @@ class ZedHandNode(Node):
         self.declare_parameter('camera_fps', 30)
 
         # Stability logic: EMA + stable frame count
-        self.declare_parameter('ema_alpha', 0.4)
-        self.declare_parameter('position_tolerance', 0.01)         # meters, max allowed EMA diff to count as stable
+        self.declare_parameter('ema_alpha', 0.4)                    # EMA alpha for smoothing the detected hand position over time (0.0 = no smoothing, 1.0 = max smoothing)
+        self.declare_parameter('position_tolerance', 0.01)          # meters, max allowed EMA diff to count as stable
         self.declare_parameter('stable_frames_required', 45)        # 45 frames at 30 fps ~= 1.5 s
 
         # MediaPipe hand detection parameters
         self.declare_parameter('max_num_hands', 2)
-        self.declare_parameter('min_detection_confidence', 0.6)
-        self.declare_parameter('min_tracking_confidence', 0.6)
+        self.declare_parameter('min_detection_confidence', 0.6)     # Minimum confidence for MediaPipe to consider a hand detected in the image
+        self.declare_parameter('min_tracking_confidence', 0.6)      # Minimum confidence for MediaPipe to consider the hand tracking valid in subsequent frames
         self.declare_parameter('target_hand_label', 'Left')         # For current ZED view, Left selects real right hand
 
         # 3D point extraction parameters
-        self.declare_parameter('depth_window_radius', 2)            # pixel window half-size
-        self.declare_parameter('depth_min_valid_points', 5)
+        self.declare_parameter('depth_window_radius', 2)            # Pixel radius around the target fingertip to consider for depth median calculation (e.g. 2 means a 5x5 window)
+        self.declare_parameter('depth_min_valid_points', 5)         # Minimum number of valid depth points required in the window to consider the 3D point valid    
 
         self.declare_parameter('publish_topic', '/right_hand_pose_base')
-        self.declare_parameter('exit_delay_after_publish', 1.0)     # seconds
+        self.declare_parameter('exit_delay_after_publish', 3.0)     # Seconds to wait after publishing before exiting, to ensure message is sent before shutdown
         self.declare_parameter('show_viewer', True)
 
         self.camera_fps = int(self.get_parameter('camera_fps').value)
@@ -83,15 +83,17 @@ class ZedHandNode(Node):
         self.point_cloud = sl.Mat()
 
         # ===== MediaPipe =====
-        self.mp_hands = mp.solutions.hands
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.mp_drawing_styles = mp.solutions.drawing_styles
+        self.mp_hands = mp.solutions.hands                      # MediaPipe Hands solution for hand landmark detection and tracking
+        self.mp_drawing = mp.solutions.drawing_utils            # Utility for drawing hand landmarks and connections on images
+        self.mp_drawing_styles = mp.solutions.drawing_styles    # Predefined styles for drawing hand landmarks and connections
+        
+        # Create MediaPipe Hands object with specified parameters
         self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
+            static_image_mode=False,                                    # Set to False for video stream input, enabling tracking across frames
             max_num_hands=self.max_num_hands,
             min_detection_confidence=self.min_detection_confidence,
             min_tracking_confidence=self.min_tracking_confidence,
-            model_complexity=1,
+            model_complexity=1,                                     # 0, 1, or 2. Higher complexity may improve accuracy but reduce speed. Default is 1.
         )
 
         # ===== EMA + stable frame state =====
@@ -134,7 +136,7 @@ class ZedHandNode(Node):
         init_params.camera_fps = self.camera_fps
         init_params.coordinate_units = sl.UNIT.METER
         init_params.coordinate_system = sl.COORDINATE_SYSTEM.IMAGE
-        init_params.depth_mode = sl.DEPTH_MODE.ULTRA
+        init_params.depth_mode = sl.DEPTH_MODE.NEURAL
 
         status = self.zed.open(init_params)
         if status != sl.ERROR_CODE.SUCCESS:

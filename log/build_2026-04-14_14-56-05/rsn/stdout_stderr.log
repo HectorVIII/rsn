@@ -1,0 +1,26 @@
+running egg_info
+writing build/rsn/rsn.egg-info/PKG-INFO
+writing dependency_links to build/rsn/rsn.egg-info/dependency_links.txt
+writing entry points to build/rsn/rsn.egg-info/entry_points.txt
+writing requirements to build/rsn/rsn.egg-info/requires.txt
+writing top-level names to build/rsn/rsn.egg-info/top_level.txt
+reading manifest file 'build/rsn/rsn.egg-info/SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file 'build/rsn/rsn.egg-info/SOURCES.txt'
+running build
+running build_py
+copying rsn/demo_coordinator.py -> /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn
+running install
+running install_lib
+copying /home/huitao/ros2_ws/src/rsn/build/rsn/build/lib/rsn/demo_coordinator.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn
+byte-compiling /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn/demo_coordinator.py to demo_coordinator.cpython-310.pyc
+running install_data
+copying launch/handover_demo.launch.py -> /home/huitao/ros2_ws/src/rsn/install/rsn/share/rsn/launch
+running install_egg_info
+removing '/home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn-0.0.0-py3.10.egg-info' (and everything under it)
+Copying build/rsn/rsn.egg-info to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn-0.0.0-py3.10.egg-info
+running install_scripts
+Installing demo_coordinator script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+Installing xarm_controller_node script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+Installing zed_hand_node script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+writing list of installed files to '/home/huitao/ros2_ws/src/rsn/build/rsn/install.log'

@@ -1,11 +1,30 @@
 /xarm_controller_node:
   ros__parameters:
     robot_ip: "192.168.1.225"
-    speed: 100.0
+
+    speed: 50.0
     acc: 100.0
     wait_for_finish: true
-    p0: [452.3, 0.0, 75.6, 180.0, 0.0, 0.0]  # Idle pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
-    p1: [452.3, 0.0, 13.7, 180.0, 0.0, 0.0]   # Grasp pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
+
+    p0: [488.5, -334.8, 91.9, -180.0, 0.0, 90.0]  # Idle pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
+    p1: [488.5, -334.8, 12.9, -180.0, 0.0, 90.0]   # Grasp pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
+    
     open_position: 500
     close_position: 0
-    gripper_speed: 1000
+    gripper_speed: 2000
+    
+    hand_topic: "/right_hand_pose_base"
+    hand_hover_offset_mm: 20.0
+    hand_roll: 180.0
+    hand_pitch: 0.0
+    hand_yaw: 90.0
+
+    release_wait_seconds: 3.0
+    retreat_z_offset_mm: 30.0
+
+    release_force_threshold_n: 8.0
+    release_hold_time_s: 0.2
+    release_timeout_s: 10.0
+    release_use_force_magnitude: true
+    release_poll_dt_s: 0.05
+    

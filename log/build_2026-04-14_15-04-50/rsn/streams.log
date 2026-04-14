@@ -1,0 +1,25 @@
+[0.423s] Invoking command in '/home/huitao/ros2_ws/src/rsn': PYTHONPATH=/home/huitao/ros2_ws/src/rsn/build/rsn/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/rsn build --build-base /home/huitao/ros2_ws/src/rsn/build/rsn/build install --record /home/huitao/ros2_ws/src/rsn/build/rsn/install.log --single-version-externally-managed install_data
+[0.560s] running egg_info
+[0.561s] writing build/rsn/rsn.egg-info/PKG-INFO
+[0.561s] writing dependency_links to build/rsn/rsn.egg-info/dependency_links.txt
+[0.561s] writing entry points to build/rsn/rsn.egg-info/entry_points.txt
+[0.561s] writing requirements to build/rsn/rsn.egg-info/requires.txt
+[0.561s] writing top-level names to build/rsn/rsn.egg-info/top_level.txt
+[0.562s] reading manifest file 'build/rsn/rsn.egg-info/SOURCES.txt'
+[0.563s] adding license file 'LICENSE'
+[0.563s] writing manifest file 'build/rsn/rsn.egg-info/SOURCES.txt'
+[0.563s] running build
+[0.563s] running build_py
+[0.563s] running install
+[0.563s] running install_lib
+[0.564s] running install_data
+[0.564s] copying config/xarm_controller_params.yaml -> /home/huitao/ros2_ws/src/rsn/install/rsn/share/rsn/config
+[0.564s] running install_egg_info
+[0.565s] removing '/home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn-0.0.0-py3.10.egg-info' (and everything under it)
+[0.565s] Copying build/rsn/rsn.egg-info to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages/rsn-0.0.0-py3.10.egg-info
+[0.566s] running install_scripts
+[0.577s] Installing demo_coordinator script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+[0.577s] Installing xarm_controller_node script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+[0.577s] Installing zed_hand_node script to /home/huitao/ros2_ws/src/rsn/install/rsn/lib/rsn
+[0.577s] writing list of installed files to '/home/huitao/ros2_ws/src/rsn/build/rsn/install.log'
+[0.587s] Invoked command in '/home/huitao/ros2_ws/src/rsn' returned '0': PYTHONPATH=/home/huitao/ros2_ws/src/rsn/build/rsn/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/huitao/ros2_ws/src/rsn/install/rsn/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/rsn build --build-base /home/huitao/ros2_ws/src/rsn/build/rsn/build install --record /home/huitao/ros2_ws/src/rsn/build/rsn/install.log --single-version-externally-managed install_data

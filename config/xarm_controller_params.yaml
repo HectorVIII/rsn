@@ -2,12 +2,12 @@
   ros__parameters:
     robot_ip: "192.168.1.225"
 
-    speed: 100.0
-    acc: 200.0
+    speed: 50.0
+    acc: 100.0
     wait_for_finish: true
 
-    p0: [452.3, 0.0, 75.6, 180.0, 0.0, 0.0]  # Idle pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
-    p1: [452.3, 0.0, 13.7, 180.0, 0.0, 0.0]   # Grasp pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
+    p0: [488.5, -334.8, 91.9, -180.0, 0.0, 90.0]  # Idle pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
+    p1: [488.5, -334.8, 12.9, -180.0, 0.0, 90.0]   # Grasp pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
     
     open_position: 500
     close_position: 0

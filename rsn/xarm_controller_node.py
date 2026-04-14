@@ -80,7 +80,6 @@ class XArmControllerNode(Node):
         self.get_logger().info(f'Hand hover offset: {self.hand_hover_offset_mm} mm')
         self.get_logger().info(f'Release wait seconds: {self.release_wait_seconds}')
         self.get_logger().info(f'Retreat z offset: {self.retreat_z_offset_mm} mm')
-        self.get_logger().info(f'Retreat z offset: {self.retreat_z_offset_mm} mm')
         self.get_logger().info(f'Release force threshold: {self.release_force_threshold_n} N')
         self.get_logger().info(f'Release hold time: {self.release_hold_time_s} s')
         self.get_logger().info(f'Release timeout: {self.release_timeout_s} s')
