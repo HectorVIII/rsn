@@ -31,6 +31,7 @@ setup(
             'demo_coordinator = rsn.demo_cordinator:main',
             'xarm_controller_node = rsn.xarm_controller_node:main',
             'zed_hand_node = rsn.zed_hand_node:main',
+            'instrument_detection_node = rsn.instrument_detection_node:main',
         ],
     },
 )

@@ -145,6 +145,7 @@ class ZedHandNode(Node):
         self.get_logger().info('ZED camera opened successfully.')
 
     def start_hand_detection_callback(self, request, response):
+        """Enable hand detection when the start service is called."""
         self.get_logger().info('START_HAND_DETECTION command received')
         self.detection_enabled = True
         self._reset_stability()
@@ -153,6 +154,8 @@ class ZedHandNode(Node):
         return response
 
     def timer_callback(self):
+        """Process each frame, detect the hand, and publish once when stable."""
+
         if self.published_once:
             return
 
@@ -331,7 +334,7 @@ class ZedHandNode(Node):
         x = float(lm[8].x)   # INDEX_FINGER_TIP
         y = float(lm[8].y)
 
-        u = int(np.clip(round(x * img_w), 0, img_w - 1))
+        u = int(np.clip(round(x * img_w), 0, img_w - 1))    # Convert normalized [0,1] to pixel coordinates and clip to image bounds
         v = int(np.clip(round(y * img_h), 0, img_h - 1))
         return u, v
 
@@ -372,11 +375,15 @@ class ZedHandNode(Node):
         return p_cam, len(points)
 
     def _transform_cam_to_base(self, p_cam):
+        """Transform a 3D point from camera frame to robot base frame."""
+
         p_cam_h = np.array([p_cam[0], p_cam[1], p_cam[2], 1.0], dtype=np.float64)
         p_base_h = self.T_cam2base @ p_cam_h
         return p_base_h[:3]
 
     def _publish_pose(self, p_base):
+        """Publish the detected hand position as a PoseStamped message."""
+
         msg = PoseStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'xarm_base'
@@ -393,6 +400,8 @@ class ZedHandNode(Node):
         self.pose_pub.publish(msg)
 
     def _draw_idle_overlay(self, frame):
+        """Draw viewer text when the node is waiting for the start command."""
+
         h, _ = frame.shape[:2]
         cv2.putText(
             frame,
@@ -432,6 +441,8 @@ class ZedHandNode(Node):
         )
 
     def _draw_overlay(self, frame, hand_cam, status_text):
+        """Draw real-time debug information and hand tracking results on the viewer."""
+
         h, w = frame.shape[:2]
 
         if self.last_hand_uv is not None:
@@ -542,6 +553,7 @@ class ZedHandNode(Node):
         )
 
     def _reset_stability(self):
+        """Reset all stability-related tracking state."""
         self.ema = None
         self.last_ema = None
         self.stable_frames = 0
@@ -550,6 +562,7 @@ class ZedHandNode(Node):
         self.last_point_count = 0
 
     def destroy_node(self):
+        """Clean up OpenCV, MediaPipe, and ZED resources before shutdown."""
         self.get_logger().info('Shutting down zed_hand_node...')
         try:
             cv2.destroyAllWindows()
