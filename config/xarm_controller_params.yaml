@@ -2,29 +2,49 @@
   ros__parameters:
     robot_ip: "192.168.1.225"
 
+    # ===== Basic motion =====
     speed: 50.0
     acc: 100.0
     wait_for_finish: true
 
-    p0: [488.5, -334.8, 91.9, -180.0, 0.0, 90.0]  # Idle pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
-    p1: [488.5, -334.8, 12.9, -180.0, 0.0, 90.0]   # Grasp pose, 6D pose list: [x, y, z, roll, pitch, yaw] mm and degree
-    
+    # ===== Fixed poses =====
+    # Home / standby pose
+    p0: [333.1, 0.0, 471.6, 180.0, -15.0, 0.0]
+
+    # Optional lower pose (currently kept for compatibility)
+    p1: [452.3, 0.0, 13.7, 180.0, 0.0, 0.0]
+
+    # ===== Gripper =====
     open_position: 500
     close_position: 0
     gripper_speed: 2000
-    
+
+    # ===== Hand-guided motion =====
     hand_topic: "/right_hand_pose_base"
     hand_hover_offset_mm: 60.0
     hand_roll: 180.0
     hand_pitch: 0.0
     hand_yaw: 90.0
 
+    # ===== Instrument-guided motion =====
+    instrument_topic: "/instrument_grasp_pose_base"
+    instrument_hover_offset_mm: 25.0
+    instrument_roll: 180.0
+    instrument_pitch: 0.0
+    instrument_yaw: 0.0
+    lift_after_grasp_mm: 30.0
+
+    # Use calibrated fixed X / Z, while Y comes from detected pose
+    instrument_fixed_x_mm: 410.0
+    instrument_fixed_z_mm: 14.0
+
+    # ===== Release / retreat =====
     release_wait_seconds: 3.0
     retreat_z_offset_mm: 30.0
 
-    release_force_threshold_n: 5.0
+    # ===== FT-based release detection =====
+    release_force_threshold_n: 7.0
     release_hold_time_s: 0.2
-    release_timeout_s: 20.0
+    release_timeout_s: 10.0
     release_use_force_magnitude: true
     release_poll_dt_s: 0.05
-    

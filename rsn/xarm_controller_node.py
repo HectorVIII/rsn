@@ -16,7 +16,7 @@ class XArmControllerNode(Node):
         self.declare_parameter('robot_ip', '192.168.1.225')
 
         self.declare_parameter('speed', 50.0)   # mm/s
-        self.declare_parameter('acc', 100.0)     # mm/s^2
+        self.declare_parameter('acc', 100.0)    # mm/s^2
         self.declare_parameter('wait_for_finish', True)
 
         self.declare_parameter('p0', [452.3, 0.0, 75.6, 180.0, 0.0, 0.0])
@@ -26,18 +26,28 @@ class XArmControllerNode(Node):
         self.declare_parameter('close_position', 0)
         self.declare_parameter('gripper_speed', 2000)
 
-        # Hand-guided motion parameters
+        # ===== Hand-guided motion parameters =====
         self.declare_parameter('hand_topic', '/right_hand_pose_base')
         self.declare_parameter('hand_hover_offset_mm', 50.0)
         self.declare_parameter('hand_roll', 180.0)
         self.declare_parameter('hand_pitch', 0.0)
         self.declare_parameter('hand_yaw', 90.0)
 
-        #Release parameters
+        # ===== Instrument-guided motion parameters =====
+        self.declare_parameter('instrument_topic', '/instrument_grasp_pose_base')
+        self.declare_parameter('instrument_hover_offset_mm', 25.0)
+        self.declare_parameter('instrument_roll', 180.0)
+        self.declare_parameter('instrument_pitch', 0.0)
+        self.declare_parameter('instrument_yaw', 0.0)
+        self.declare_parameter('instrument_fixed_x_mm', 410.0)
+        self.declare_parameter('instrument_fixed_z_mm', 14.0)
+        self.declare_parameter('lift_after_grasp_mm', 30.0)
+
+        # ===== Release parameters =====
         self.declare_parameter('release_wait_seconds', 3.0)
         self.declare_parameter('retreat_z_offset_mm', 50.0)
 
-        # FT-based release parameters
+        # ===== FT-based release parameters =====
         self.declare_parameter('release_force_threshold_n', 7.0)
         self.declare_parameter('release_hold_time_s', 0.2)
         self.declare_parameter('release_timeout_s', 10.0)
@@ -62,6 +72,15 @@ class XArmControllerNode(Node):
         self.hand_pitch = float(self.get_parameter('hand_pitch').value)
         self.hand_yaw = float(self.get_parameter('hand_yaw').value)
 
+        self.instrument_topic = str(self.get_parameter('instrument_topic').value)
+        self.instrument_hover_offset_mm = float(self.get_parameter('instrument_hover_offset_mm').value)
+        self.instrument_roll = float(self.get_parameter('instrument_roll').value)
+        self.instrument_pitch = float(self.get_parameter('instrument_pitch').value)
+        self.instrument_yaw = float(self.get_parameter('instrument_yaw').value)
+        self.instrument_fixed_x_mm = float(self.get_parameter('instrument_fixed_x_mm').value)
+        self.instrument_fixed_z_mm = float(self.get_parameter('instrument_fixed_z_mm').value)
+        self.lift_after_grasp_mm = float(self.get_parameter('lift_after_grasp_mm').value)
+
         self.release_wait_seconds = float(self.get_parameter('release_wait_seconds').value)
         self.retreat_z_offset_mm = float(self.get_parameter('retreat_z_offset_mm').value)
         self.release_force_threshold_n = float(self.get_parameter('release_force_threshold_n').value)
@@ -70,15 +89,21 @@ class XArmControllerNode(Node):
         self.release_use_force_magnitude = bool(self.get_parameter('release_use_force_magnitude').value)
         self.release_poll_dt_s = float(self.get_parameter('release_poll_dt_s').value)
 
-        # Latest hand pose cache
+        # ===== Latest pose cache =====
         self.latest_hand_pose = None
         self.last_hand_hover_pose = None
         self.last_hand_target_pose = None
+
+        self.latest_instrument_pose = None
+        self.last_instrument_hover_pose = None
+        self.last_instrument_target_pose = None
 
         self.get_logger().info(f'Loaded P0: {self.p0}')
         self.get_logger().info(f'Loaded P1: {self.p1}')
         self.get_logger().info(f'Hand topic: {self.hand_topic}')
         self.get_logger().info(f'Hand hover offset: {self.hand_hover_offset_mm} mm')
+        self.get_logger().info(f'Instrument topic: {self.instrument_topic}')
+        self.get_logger().info(f'Instrument hover offset: {self.instrument_hover_offset_mm} mm')
         self.get_logger().info(f'Release wait seconds: {self.release_wait_seconds}')
         self.get_logger().info(f'Retreat z offset: {self.retreat_z_offset_mm} mm')
         self.get_logger().info(f'Release force threshold: {self.release_force_threshold_n} N')
@@ -94,11 +119,18 @@ class XArmControllerNode(Node):
 
         self._init_robot()
 
-        # ===== Subscriber =====
+        # ===== Subscribers =====
         self.hand_pose_sub = self.create_subscription(
             PoseStamped,
             self.hand_topic,
             self.hand_pose_callback,
+            10
+        )
+
+        self.instrument_pose_sub = self.create_subscription(
+            PoseStamped,
+            self.instrument_topic,
+            self.instrument_pose_callback,
             10
         )
 
@@ -111,6 +143,12 @@ class XArmControllerNode(Node):
         )
         self.move_to_hand_service = self.create_service(
             Trigger, 'move_to_hand', self.move_to_hand_callback
+        )
+        self.move_to_instrument_service = self.create_service(
+            Trigger, 'move_to_instrument', self.move_to_instrument_callback
+        )
+        self.lift_after_grasp_service = self.create_service(
+            Trigger, 'lift_after_grasp', self.lift_after_grasp_callback
         )
         self.wait_for_release_service = self.create_service(
             Trigger, 'wait_for_release', self.wait_for_release_callback
@@ -127,7 +165,8 @@ class XArmControllerNode(Node):
 
         self.get_logger().info(
             'Services ready: /move_to_p0, /move_to_p1, /move_to_hand, '
-            '/open_gripper, /close_gripper, /wait_for_release, /retreat_after_release'
+            '/move_to_instrument, /lift_after_grasp, /open_gripper, /close_gripper, '
+            '/wait_for_release, /retreat_after_release'
         )
 
     def _init_robot(self):
@@ -148,10 +187,6 @@ class XArmControllerNode(Node):
         self.get_logger().info('Robot/gripper initialization done.')
 
     def _ensure_robot_ready(self):
-        """
-        Keep readiness logic separate from motion logic.
-        This is cleaner than putting mode/state reset directly inside _move_to_pose().
-        """
         if self.arm.error_code != 0:
             self.get_logger().warn(f'Clearing error_code={self.arm.error_code}')
             self.arm.clean_error()
@@ -230,11 +265,19 @@ class XArmControllerNode(Node):
             f'z={msg.pose.position.z:.4f} m'
         )
 
+    def instrument_pose_callback(self, msg):
+        self.latest_instrument_pose = msg.pose
+        self.get_logger().info(
+            f'Received instrument pose in {msg.header.frame_id}: '
+            f'x={msg.pose.position.x:.4f} m, '
+            f'y={msg.pose.position.y:.4f} m, '
+            f'z={msg.pose.position.z:.4f} m'
+        )
+
     def _build_hand_approach_poses(self):
         if self.latest_hand_pose is None:
             return None, None, 'No hand pose received yet.'
 
-        # Topic is in meters -> xArm expects millimeters
         x_mm = self.latest_hand_pose.position.x * 1000.0
         y_mm = self.latest_hand_pose.position.y * 1000.0
         z_mm = self.latest_hand_pose.position.z * 1000.0
@@ -266,13 +309,64 @@ class XArmControllerNode(Node):
         return hover_pose, target_pose, (
             f'Built approach poses from latest hand pose: hover={hover_pose}, target={target_pose}'
         )
+
+    def _build_instrument_approach_poses(self):
+        if self.latest_instrument_pose is None:
+            return None, None, 'No instrument pose received yet.'
+
+        x_mm = self.instrument_fixed_x_mm
+        y_mm = self.latest_instrument_pose.position.y * 1000.0
+        z_mm = self.instrument_fixed_z_mm
+
+        self.get_logger().info(
+            f'[instrument] raw pose from topic: x={self.latest_instrument_pose.position.x:.4f} m, '
+            f'y={self.latest_instrument_pose.position.y:.4f} m, '
+            f'z={self.latest_instrument_pose.position.z:.4f} m'
+        )
+
+        self.get_logger().info(
+            f'[instrument] using fixed x_mm={x_mm:.1f}, '
+            f'fixed z_mm={z_mm:.1f}, '
+            f'while y_mm={y_mm:.1f}'
+        )
+
+        hover_pose = [
+            x_mm,
+            y_mm,
+            z_mm + self.instrument_hover_offset_mm,
+            self.instrument_roll,
+            self.instrument_pitch,
+            self.instrument_yaw,
+        ]
+
+        target_pose = [
+            x_mm,
+            y_mm,
+            z_mm,
+            self.instrument_roll,
+            self.instrument_pitch,
+            self.instrument_yaw,
+        ]
+
+        return hover_pose, target_pose, (
+            f'Built approach poses from latest instrument pose: hover={hover_pose}, target={target_pose}'
+        )
+
+    def _build_lift_after_grasp_pose(self):
+        if self.last_instrument_target_pose is None:
+            return None, 'No last instrument target pose recorded yet.'
+    
+        pose = list(self.last_instrument_target_pose)
+        pose[2] += self.lift_after_grasp_mm
+    
+        return pose, (f'Built lift after grasp pose from last instrument target pose: {pose}')
     
     def _build_retreat_pose(self):
         if self.last_hand_hover_pose is None:
             return None, 'No last hand hover pose recorded yet.'
-        
-        pose = list(self.last_hand_hover_pose)  # Copy the last hover pose
-        pose[2] += self.retreat_z_offset_mm  # Increase z by retreat offset
+
+        pose = list(self.last_hand_hover_pose)
+        pose[2] += self.retreat_z_offset_mm
         return pose, f'Built retreat pose from last hand hover pose: {pose}'
 
     def move_to_p0_callback(self, request, response):
@@ -332,12 +426,70 @@ class XArmControllerNode(Node):
             self.get_logger().error(msg_target)
 
         return response
+
+    def move_to_instrument_callback(self, request, response):
+        self.get_logger().info('MOVE_TO_INSTRUMENT command received')
+
+        hover_pose, target_pose, build_msg = self._build_instrument_approach_poses()
+        self.get_logger().info(build_msg)
+
+        if hover_pose is None or target_pose is None:
+            response.success = False
+            response.message = build_msg
+            self.get_logger().error(build_msg)
+            return response
+
+        self.get_logger().info('Stage 1/2: move to instrument upper hover pose')
+        ok_hover, msg_hover = self._move_to_pose(hover_pose)
+        if not ok_hover:
+            response.success = False
+            response.message = f'Failed at hover stage: {msg_hover}'
+            self.get_logger().error(response.message)
+            return response
+
+        self.last_instrument_hover_pose = list(hover_pose)
+        self.get_logger().info(msg_hover)
+
+        self.get_logger().info('Stage 2/2: descend to instrument target pose')
+        ok_target, msg_target = self._move_to_pose(target_pose)
+        response.success = ok_target
+        response.message = msg_target
+
+        if ok_target:
+            self.last_instrument_target_pose = list(target_pose)
+            self.get_logger().info(msg_target)
+        else:
+            self.get_logger().error(msg_target)
+
+        return response
     
+    def lift_after_grasp_callback(self, request, response):
+        self.get_logger().info('LIFT_AFTER_GRASP command received')
+
+        pose, build_msg = self._build_lift_after_grasp_pose()
+        self.get_logger().info(build_msg)
+
+        if pose is None:
+            response.success = False
+            response.message = build_msg
+            self.get_logger().error(build_msg)
+            return response
+
+        ok, msg = self._move_to_pose(pose)
+        response.success = ok
+        response.message = msg
+
+        if ok:
+            self.get_logger().info(msg)
+        else:
+            self.get_logger().error(msg)
+
+        return response
+
     def wait_for_release_callback(self, request, response):
         self.get_logger().info('WAIT_FOR_RELEASE command received')
 
         try:
-            # Enable FT sensor and zero it before waiting for pull
             code = self.arm.set_ft_sensor_enable(1)
             self.get_logger().info(f'set_ft_sensor_enable(1) -> code={code}')
             time.sleep(0.2)
@@ -368,7 +520,6 @@ class XArmControllerNode(Node):
                     release_signal = (fx**2 + fy**2 + fz**2) ** 0.5
                     signal_name = '|F|'
                 else:
-                    # Default fallback: use force magnitude anyway
                     release_signal = (fx**2 + fy**2 + fz**2) ** 0.5
                     signal_name = '|F|'
 
@@ -399,7 +550,7 @@ class XArmControllerNode(Node):
                 else:
                     if trigger_start_time is not None:
                         self.get_logger().info(
-                            f'Release signal dropped below threshold. Resetting hold timer.'
+                            'Release signal dropped below threshold. Resetting hold timer.'
                         )
                     trigger_start_time = None
 
@@ -407,10 +558,9 @@ class XArmControllerNode(Node):
 
             response.success = False
             response.message = (
-                f'Release timeout after {self.release_timeout_s:.2f} s '
-                f'(threshold={self.release_force_threshold_n:.2f} N)'
+                f'Release timeout after {self.release_timeout_s:.2f} s'
             )
-            self.get_logger().error(response.message)
+            self.get_logger().warn(response.message)
             return response
 
         except Exception as e:
@@ -418,7 +568,7 @@ class XArmControllerNode(Node):
             response.message = f'Exception while waiting for release: {e}'
             self.get_logger().error(response.message)
             return response
-        
+
     def retreat_after_release_callback(self, request, response):
         self.get_logger().info('RETREAT_AFTER_RELEASE command received')
 
@@ -464,15 +614,6 @@ class XArmControllerNode(Node):
             self.get_logger().error(msg)
         return response
 
-    def destroy_node(self):
-        self.get_logger().info('Shutting down xarm_controller_node...')
-        try:
-            if hasattr(self, 'arm'):
-                self.arm.disconnect()
-        except Exception as e:
-            self.get_logger().warn(f'Exception during disconnect: {e}')
-        super().destroy_node()
-
 
 def main(args=None):
     rclpy.init(args=args)
@@ -480,8 +621,6 @@ def main(args=None):
 
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
-        node.get_logger().info('KeyboardInterrupt received, exiting...')
     finally:
         node.destroy_node()
         rclpy.shutdown()
