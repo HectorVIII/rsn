@@ -102,6 +102,8 @@ Services:
 
 ## Notes For FlexBE Integration
 
+See `docs/flexbe_migration_plan.md` for the planned migration path.
+
 The current `demo_coordinator` owns the full procedural demo sequence. For FlexBE integration, treat perception, robot motion, gripper control, and release detection as lower-level primitives, then move sequencing logic out of `demo_coordinator` and into a behavior/state machine.
 
 Good candidates for future Actions:
