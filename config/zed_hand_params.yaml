@@ -1,0 +1,23 @@
+/zed_hand_node:
+  ros__parameters:
+    camera_fps: 30
+
+    # Stability logic
+    ema_alpha: 0.4
+    position_tolerance: 0.01
+    stable_frames_required: 45
+
+    # MediaPipe hand detection
+    max_num_hands: 2
+    min_detection_confidence: 0.6
+    min_tracking_confidence: 0.6
+    target_hand_label: "Left"
+
+    # 3D point extraction
+    depth_window_radius: 2
+    depth_min_valid_points: 5
+
+    # ROS topic and node behavior
+    publish_topic: "/right_hand_pose_base"
+    exit_delay_after_publish: 3.0
+    show_viewer: true

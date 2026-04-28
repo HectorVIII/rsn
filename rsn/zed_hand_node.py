@@ -19,6 +19,11 @@ class ZedHandNode(Node):
     def __init__(self):
         super().__init__('zed_hand_node')
 
+        if mp is None:
+            raise RuntimeError(
+                'mediapipe is not installed. Install it before running zed_hand_node.'
+            )
+
         # ===== Parameters =====
         self.declare_parameter('camera_fps', 30)
 

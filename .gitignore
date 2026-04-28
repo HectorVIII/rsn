@@ -1,0 +1,17 @@
+# ROS/colcon build artifacts
+build/
+install/
+log/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test/tool caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local assistant/session files
+.codex

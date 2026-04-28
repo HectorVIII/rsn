@@ -3,13 +3,15 @@
 <package format="3">
   <name>rsn</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Voice-guided surgical instrument handover demo with xArm and ZED.</description>
   <maintainer email="jszdhyjs@gmail.com">huitao</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
+  <exec_depend>ament_index_python</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

@@ -22,41 +22,46 @@ class InstrumentDetectionNode(Node):
         # ============================================================
         # Parameters
         # ============================================================
-        self.declare_parameter(
-            'model_path',
-            '/home/huitao/MT/yolo_runs/black_tray_finetune/weights/best.pt'
-        )
+
+        #YOLO model and detection parameters
+        self.declare_parameter('model_path', '')
         self.declare_parameter('camera_serial', 27204693)
         self.declare_parameter('camera_fps', 30)
         self.declare_parameter('img_size', 1280)
         self.declare_parameter('conf_threshold', 0.85)
-        self.declare_parameter('min_mask_area', 500)
+        self.declare_parameter('min_mask_area', 500)    # Minimum area in pixels for a valid mask contour to be considered as a detection. Helps filter out noise and small false positives.
 
+        # ROS2 Topics
         self.declare_parameter('voice_target_topic', '/voice_target_instrument')
         self.declare_parameter('publish_topic', '/instrument_grasp_pose_base')
 
-        self.declare_parameter('mask_threshold', 0.50)
-        self.declare_parameter('close_kernel', 7)
-        self.declare_parameter('open_kernel', 3)
+        # Mask post-processing parameters
+        self.declare_parameter('mask_threshold', 0.50)  # Threshold for converting the YOLO mask probability map into a binary mask.
+        self.declare_parameter('close_kernel', 7)       # Kernel size for morphological closing, used to fill small holes and connect nearby mask regions.
+        self.declare_parameter('open_kernel', 3)        # Kernel size for morphological opening, used to remove small noise from the mask.
 
-        self.declare_parameter('center_ema_alpha', 0.18)
+        # Tracking and stability parameters
+        self.declare_parameter('center_ema_alpha', 0.18)   # Smoothing factor for exponential moving average of the detected center position. Higher values give more weight to recent detections, while lower values smooth out the trajectory more.#
         self.declare_parameter('track_max_dist', 80.0)
         self.declare_parameter('track_max_missed', 20)
 
-        self.declare_parameter('axis_percentile_low', 8.0)
-        self.declare_parameter('axis_percentile_high', 92.0)
+        # Parameters for robust oriented center estimation from contour
+        self.declare_parameter('axis_percentile_low', 8.0)    # Lower percentile used to reject extreme contour points when estimating the object extent along the axes.
+        self.declare_parameter('axis_percentile_high', 92.0)  # Upper percentile used to reject extreme contour points when estimating the object extent along the axes.
 
+        # Grasp projection and compensation parameters
         self.declare_parameter('grasp_z_base_m', 0.0129)
         self.declare_parameter('x_offset_m', 0.028)
         self.declare_parameter('y_offset_m', -0.015)
-        self.declare_parameter('hover_offset_m', 0.025)
+        self.declare_parameter('hover_offset_m', 0.025) # Additional height offset to apply to the published grasp pose for hovering above the object. This can help ensure a safer approach and allow for a more vertical grasp angle, especially if the initial detection is slightly noisy in depth.
 
+        # Viewer and node behavior parameters
         self.declare_parameter('show_viewer', True)
         self.declare_parameter('publish_once_then_stop', True)
-        self.declare_parameter('target_stable_frames', 8)
-        self.declare_parameter('exit_delay_after_publish', 0.5)
+        self.declare_parameter('target_stable_frames', 8)   # Number of consecutive frames the target must be detected and stable before publishing the grasp pose.
+        self.declare_parameter('exit_delay_after_publish', 0.5) # Time in seconds to wait after publishing the grasp pose before shutting down the node.
 
-        self.model_path = str(self.get_parameter('model_path').value)
+        self.model_path = str(self.get_parameter('model_path').value).strip()
         self.camera_serial = int(self.get_parameter('camera_serial').value)
         self.camera_fps = int(self.get_parameter('camera_fps').value)
         self.img_size = int(self.get_parameter('img_size').value)
@@ -130,6 +135,12 @@ class InstrumentDetectionNode(Node):
         # ============================================================
         # Model + camera
         # ============================================================
+        if not self.model_path:
+            raise RuntimeError(
+                'model_path is not configured. Set it in launch parameters or '
+                'config/instrument_detection_params.yaml.'
+            )
+
         self.model = YOLO(self.model_path)
 
         self.zed = sl.Camera()
@@ -152,7 +163,7 @@ class InstrumentDetectionNode(Node):
     # ROS callbacks
     # ============================================================
     def voice_target_callback(self, msg: String):
-        self.current_target_class = msg.data.strip().upper()
+        self.current_target_class = msg.data.strip().upper()    # Convert to uppercase for case-insensitive matching with YOLO class names
         self.get_logger().info(f'Received voice target: {self.current_target_class}')
         self._reset_target_tracking()
 

@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='huitao',
     maintainer_email='jszdhyjs@gmail.com',
-    description='TODO: Package description',
+    description='Voice-guided surgical instrument handover demo with xArm and ZED.',
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -28,7 +28,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'demo_coordinator = rsn.demo_cordinator:main',
+            'demo_coordinator = rsn.demo_coordinator:main',
             'xarm_controller_node = rsn.xarm_controller_node:main',
             'zed_hand_node = rsn.zed_hand_node:main',
             'voice_command_node = rsn.voice_command_node:main',

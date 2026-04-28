@@ -1,0 +1,37 @@
+/demo_coordinator:
+  ros__parameters:
+    # Voice waiting
+    voice_target_topic: "/voice_target_instrument"
+    voice_wait_timeout_sec: 30.0
+    voice_poll_interval_sec: 0.2
+
+    # Instrument move retry
+    instrument_move_max_attempts: 40
+    instrument_move_retry_interval_sec: 0.5
+
+    # Hand move retry
+    hand_move_max_attempts: 20
+    hand_move_retry_interval_sec: 1.0
+
+    # Sleep timings
+    sleep_after_move_p0_sec: 1.0
+    sleep_after_open_gripper_sec: 1.0
+    sleep_after_start_instrument_detection_sec: 1.0
+    sleep_after_move_to_instrument_sec: 1.0
+    sleep_after_close_gripper_sec: 1.0
+    sleep_after_lift_after_grasp_sec: 1.0
+
+    sleep_after_instrument_node_exit_sec: 1.5
+    sleep_after_start_hand_detection_sec: 0.5
+    sleep_after_move_to_hand_sec: 1.0
+    sleep_after_wait_for_release_sec: 0.5
+    sleep_after_release_open_sec: 0.5
+    sleep_after_retreat_sec: 0.5
+    sleep_after_final_return_p0_sec: 0.5
+
+    # Auto launch hand node after instrument node exits
+    auto_launch_hand_node: true
+    hand_node_package: "rsn"
+    hand_node_executable: "zed_hand_node"
+    hand_node_service_wait_timeout_sec: 20.0
+    hand_node_launch_delay_sec: 0.5

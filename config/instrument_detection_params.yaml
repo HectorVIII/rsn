@@ -1,0 +1,39 @@
+/instrument_detection_node:
+  ros__parameters:
+    # YOLO model and camera
+    model_path: "/home/huitao/MT/yolo_runs/black_tray_finetune/weights/best.pt"
+    camera_serial: 27204693
+    camera_fps: 30
+    img_size: 1280
+    conf_threshold: 0.85
+    min_mask_area: 500
+
+    # ROS topics
+    voice_target_topic: "/voice_target_instrument"
+    publish_topic: "/instrument_grasp_pose_base"
+
+    # Mask post-processing
+    mask_threshold: 0.50
+    close_kernel: 7
+    open_kernel: 3
+
+    # Tracking and stability
+    center_ema_alpha: 0.18
+    track_max_dist: 80.0
+    track_max_missed: 20
+    target_stable_frames: 8
+
+    # Robust oriented center estimation
+    axis_percentile_low: 8.0
+    axis_percentile_high: 92.0
+
+    # Grasp projection and calibrated offsets
+    x_offset_m: 0.028
+    y_offset_m: -0.015
+    grasp_z_base_m: 0.0129
+    hover_offset_m: 0.025
+
+    # Viewer and node behavior
+    show_viewer: true
+    publish_once_then_stop: true
+    exit_delay_after_publish: 0.5

@@ -1,0 +1,20 @@
+/voice_command_node:
+  ros__parameters:
+    # ROS topics
+    publish_topic: "/voice_target_instrument"
+    raw_text_topic: "/voice_recognized_text"
+
+    # Audio recording
+    sample_rate: 16000
+    channels: 1
+    block_duration: 0.1
+    silence_threshold: 0.01
+    silence_seconds_end: 1.0
+    max_record_seconds: 5.0
+    # Empty string means use the system default input device.
+    # Set this to a sounddevice device index or name when you need a specific microphone.
+    device: ""
+
+    # Debug behavior
+    enable_debug_log: true
+    publish_raw_text: true

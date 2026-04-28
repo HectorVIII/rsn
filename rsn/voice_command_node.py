@@ -26,7 +26,7 @@ class VoiceCommandNode(Node):
         self.declare_parameter('silence_threshold', 0.01)
         self.declare_parameter('silence_seconds_end', 1.0)
         self.declare_parameter('max_record_seconds', 5.0)
-        self.declare_parameter('device', None)
+        self.declare_parameter('device', '')
 
         self.declare_parameter('enable_debug_log', True)
         self.declare_parameter('publish_raw_text', True)
@@ -41,7 +41,9 @@ class VoiceCommandNode(Node):
         self.silence_threshold = float(self.get_parameter('silence_threshold').value)
         self.silence_seconds_end = float(self.get_parameter('silence_seconds_end').value)
         self.max_record_seconds = float(self.get_parameter('max_record_seconds').value)
-        self.device = self.get_parameter('device').value
+        self.device = self._normalize_audio_device(
+            self.get_parameter('device').value
+        )
 
         self.enable_debug_log = bool(self.get_parameter('enable_debug_log').value)
         self.publish_raw_text = bool(self.get_parameter('publish_raw_text').value)
@@ -79,6 +81,7 @@ class VoiceCommandNode(Node):
         self.get_logger().info(f'Silence threshold: {self.silence_threshold}')
         self.get_logger().info(f'Silence end seconds: {self.silence_seconds_end}')
         self.get_logger().info(f'Max record seconds: {self.max_record_seconds}')
+        self.get_logger().info(f'Audio device: {self.device if self.device is not None else "system default"}')
         self.get_logger().info('Example command: hi sparc give me the forceps')
 
     # ============================================================
@@ -87,6 +90,18 @@ class VoiceCommandNode(Node):
     def log_debug(self, text: str) -> None:
         if self.enable_debug_log:
             self.get_logger().info(text)
+
+    def _normalize_audio_device(self, value):
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            value = value.strip()
+            if value.lower() in ('', 'none', 'null', 'default'):
+                return None
+            return value
+
+        return value
 
     def normalize_voice_text(self, text: str) -> str:
         text = text.lower().strip()
