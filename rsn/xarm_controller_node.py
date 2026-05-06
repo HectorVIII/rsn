@@ -518,13 +518,21 @@ class XArmControllerNode(Node):
             self.get_logger().error(build_msg)
             return response
 
-        steps = [
+        steps = []
+
+        if self.last_hand_hover_pose is not None:
+            hand_hover_pose = list(self.last_hand_hover_pose)
+            steps.append(
+                ('move to hand hover pose', lambda: self._move_to_pose(hand_hover_pose))
+            )
+
+        steps.extend([
             ('move to instrument hover pose', lambda: self._move_to_pose(hover_pose)),
             ('descend to instrument source pose', lambda: self._move_to_pose(target_pose)),
             ('open gripper at source pose', lambda: self._move_gripper(self.open_position)),
             ('retreat to instrument hover pose', lambda: self._move_to_pose(hover_pose)),
             ('return to P0 after placing instrument', lambda: self._move_to_pose(self.p0)),
-        ]
+        ])
 
         for label, step in steps:
             self.get_logger().info(f'Return instrument step: {label}')
