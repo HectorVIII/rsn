@@ -29,7 +29,7 @@
 
     # Grasp projection and calibrated offsets
     x_offset_m: 0.028
-    y_offset_m: -0.015
+    y_offset_m: 0.0
     grasp_z_base_m: 0.0129
     hover_offset_m: 0.025
 

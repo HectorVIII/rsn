@@ -7,6 +7,8 @@
   <maintainer email="jszdhyjs@gmail.com">huitao</maintainer>
   <license>Apache-2.0</license>
 
+  <buildtool_depend>ament_python</buildtool_depend>
+
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>

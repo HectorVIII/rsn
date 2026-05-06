@@ -123,21 +123,18 @@ class VoiceCommandNode(Node):
     def parse_voice_command(self, text: str):
         text = self.normalize_voice_text(text)
 
-        command_aliases = [
-            "give me",
-            "bring me",
-            "hand me",
-        ]
-
         instrument_aliases = {
-            "scalpel_handle": ["scalpel handle", "scalpel"],
+            "scalpel_handle": ["scalpel handle", "scalpel", "handle"],
             "needle_holder": ["needle holder", "needleholder", "holder"],
             "tissue_forceps": ["tissue forceps", "forceps"],
             "retractor": ["retractor"],
-            "metzenbaum_scissors": ["metzenbaum scissors", "metzenbaum", "scissors"],
+            "metzenbaum_scissors": [
+                "metzenbaum scissors",
+                "metzenbaum",
+                "scissors",
+                "scissor",
+            ],
         }
-
-        has_command = any(cmd in text for cmd in command_aliases)
 
         matched_instrument = None
         for canonical_name, aliases in instrument_aliases.items():
@@ -148,7 +145,7 @@ class VoiceCommandNode(Node):
             if matched_instrument:
                 break
 
-        if has_command and matched_instrument:
+        if matched_instrument:
             return {
                 "ok": True,
                 "command": "give_me",

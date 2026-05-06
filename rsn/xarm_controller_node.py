@@ -150,6 +150,11 @@ class XArmControllerNode(Node):
         self.lift_after_grasp_service = self.create_service(
             Trigger, 'lift_after_grasp', self.lift_after_grasp_callback
         )
+        self.return_instrument_to_source_service = self.create_service(
+            Trigger,
+            'return_instrument_to_source',
+            self.return_instrument_to_source_callback
+        )
         self.wait_for_release_service = self.create_service(
             Trigger, 'wait_for_release', self.wait_for_release_callback
         )
@@ -165,7 +170,8 @@ class XArmControllerNode(Node):
 
         self.get_logger().info(
             'Services ready: /move_to_p0, /move_to_p1, /move_to_hand, '
-            '/move_to_instrument, /lift_after_grasp, /open_gripper, /close_gripper, '
+            '/move_to_instrument, /lift_after_grasp, '
+            '/return_instrument_to_source, /open_gripper, /close_gripper, '
             '/wait_for_release, /retreat_after_release'
         )
 
@@ -361,6 +367,20 @@ class XArmControllerNode(Node):
     
         return pose, (f'Built lift after grasp pose from last instrument target pose: {pose}')
     
+    def _build_return_instrument_poses(self):
+        if self.last_instrument_hover_pose is None:
+            return None, None, 'No last instrument hover pose recorded yet.'
+
+        if self.last_instrument_target_pose is None:
+            return None, None, 'No last instrument target pose recorded yet.'
+
+        hover_pose = list(self.last_instrument_hover_pose)
+        target_pose = list(self.last_instrument_target_pose)
+        return hover_pose, target_pose, (
+            'Built return-to-source poses from last instrument poses: '
+            f'hover={hover_pose}, target={target_pose}'
+        )
+
     def _build_retreat_pose(self):
         if self.last_hand_hover_pose is None:
             return None, 'No last hand hover pose recorded yet.'
@@ -484,6 +504,41 @@ class XArmControllerNode(Node):
         else:
             self.get_logger().error(msg)
 
+        return response
+
+    def return_instrument_to_source_callback(self, request, response):
+        self.get_logger().info('RETURN_INSTRUMENT_TO_SOURCE command received')
+
+        hover_pose, target_pose, build_msg = self._build_return_instrument_poses()
+        self.get_logger().info(build_msg)
+
+        if hover_pose is None or target_pose is None:
+            response.success = False
+            response.message = build_msg
+            self.get_logger().error(build_msg)
+            return response
+
+        steps = [
+            ('move to instrument hover pose', lambda: self._move_to_pose(hover_pose)),
+            ('descend to instrument source pose', lambda: self._move_to_pose(target_pose)),
+            ('open gripper at source pose', lambda: self._move_gripper(self.open_position)),
+            ('retreat to instrument hover pose', lambda: self._move_to_pose(hover_pose)),
+            ('return to P0 after placing instrument', lambda: self._move_to_pose(self.p0)),
+        ]
+
+        for label, step in steps:
+            self.get_logger().info(f'Return instrument step: {label}')
+            ok, msg = step()
+            if not ok:
+                response.success = False
+                response.message = f'Failed to {label}: {msg}'
+                self.get_logger().error(response.message)
+                return response
+            self.get_logger().info(msg)
+
+        response.success = True
+        response.message = 'Returned instrument to source pose and moved to P0.'
+        self.get_logger().info(response.message)
         return response
 
     def wait_for_release_callback(self, request, response):
