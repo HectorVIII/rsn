@@ -1,7 +1,7 @@
 # FlexBE Migration Plan
 
-This document records the recommended migration path from the current
-`demo_coordinator` procedural sequence to a FlexBE behavior.
+This document records the migration path from the original `demo_coordinator`
+procedural sequence to FlexBE-controlled task execution.
 
 ## Goal
 
@@ -17,7 +17,7 @@ only where feedback, cancellation, or explicit result data is actually needed.
 
 ## Current Runtime Ownership
 
-The current `demo_coordinator` owns the demo sequence:
+The original `demo_coordinator` owns the demo sequence:
 
 1. Move xArm to P0.
 2. Open gripper.
@@ -35,9 +35,10 @@ The current `demo_coordinator` owns the demo sequence:
 14. Retreat.
 15. Return to P0.
 
-After FlexBE is introduced, the behavior should own this sequence. The existing
-nodes should remain low-level providers of perception, motion, gripper, and
-release-detection primitives.
+The first FlexBE migration is now complete: `RSN Handover Demo` owns this
+sequence, and the existing nodes remain low-level providers of perception,
+motion, gripper, and release-detection primitives. `demo_coordinator` remains
+as a legacy fallback runner.
 
 ## Proposed Package Layout
 
@@ -51,7 +52,7 @@ ros2_ws/src/rsn_flexbe_behaviors/
 Keep `rsn` as the runtime node package. Keep FlexBE states and behaviors in the
 new package.
 
-Recommended initial structure:
+Current structure:
 
 ```text
 rsn_flexbe_behaviors/
@@ -59,15 +60,16 @@ rsn_flexbe_behaviors/
   setup.py
   setup.cfg
   resource/rsn_flexbe_behaviors
+  manifest/
+    handover_demo.xml
   rsn_flexbe_behaviors/
     __init__.py
+    handover_demo_sm.py
     states/
       __init__.py
       trigger_service_state.py
       wait_for_voice_target_state.py
-      launch_process_state.py
-  behaviors/
-    handover_demo_sm.py
+      launch_hand_node_state.py
 ```
 
 ## Initial State Mapping
@@ -129,7 +131,7 @@ Outcomes:
 - `received`
 - `timeout`
 
-### LaunchProcessState
+### LaunchHandNodeState
 
 Purpose: start `zed_hand_node` only when the behavior reaches the hand-detection
 phase, so the ZED camera is not opened by both perception nodes at the same
@@ -148,12 +150,13 @@ Outcomes:
 - `failed`
 - `service_unavailable`
 
-For the first version, this can be specific to launching `zed_hand_node`. Later,
-it can be replaced by a ROS launch-based approach or a lifecycle node.
+The first version is specific to launching `zed_hand_node`. Later, it should be
+replaced by a generic `LaunchProcessState`, a ROS launch-based approach, or a
+lifecycle-node transition.
 
 ## Behavior Graph
 
-Recommended first behavior graph:
+Implemented first behavior graph:
 
 ```text
 MoveToP0
@@ -173,8 +176,8 @@ MoveToP0
   -> finished
 ```
 
-Every service failure should transition to a common `failed` outcome. The first
-behavior should be intentionally linear because the current demo is linear and
+Every service failure currently transitions to a common `failed` outcome. The
+first behavior is intentionally linear because the original demo is linear and
 already validated.
 
 ## Launch Strategy
@@ -199,19 +202,51 @@ It should not start:
 The FlexBE behavior should start `zed_hand_node` only after
 `instrument_detection_node` publishes once and exits.
 
+Implemented launch entries:
+
+- `rsn/launch/handover_flexbe_low_level.launch.py`: starts
+  `xarm_controller_node`, `instrument_detection_node`, and
+  `voice_command_node`.
+
 ## What To Do With demo_coordinator
 
-Keep `demo_coordinator` for now as a proven reference implementation and
-fallback demo runner.
+Keep `demo_coordinator` as a proven reference implementation and fallback demo
+runner. It is now marked as the legacy procedural entry point in the README.
+Do not delete it until the FlexBE behavior has recovery logic and enough test
+coverage to replace it completely.
 
-After the FlexBE behavior is stable:
+## Phase 1 Completion Status
 
-- Keep `demo_coordinator` as a non-FlexBE demo entry point, or
-- Mark it as legacy/reference in the README.
+Completed:
 
-Do not delete it during the first FlexBE migration.
+1. Created `rsn_flexbe_behaviors`.
+2. Implemented `TriggerServiceState`.
+3. Implemented `WaitForVoiceTargetState`.
+4. Implemented `LaunchHandNodeState`.
+5. Created the linear `RSN Handover Demo` behavior.
+6. Added a low-level RSN launch file without `demo_coordinator`.
+7. Verified the FlexBE behavior with real hardware.
 
-## Future Action Candidates
+## Phase 2: Recovery And Robustness
+
+The next step is to make the behavior robust instead of only linear.
+
+Recommended recovery branches:
+
+- `Move To Instrument` failure: retry detection or return to
+  `Start Instrument Detection`.
+- `Move To Hand` failure: retry hand detection or return to
+  `Start Hand Detection`.
+- `Wait For Release` timeout: open gripper, retreat, and return to P0 instead
+  of ending in a generic failure.
+- `Launch Hand Node` failure: retry launch once, then transition to a safe
+  failure path.
+- Any unrecoverable failure: prefer a safe `Return To P0` path where possible.
+
+Keep these recovery paths in FlexBE. Do not bury task-level recovery inside the
+low-level nodes.
+
+## Phase 3: Action Candidates
 
 Convert to ROS actions only after the first FlexBE behavior runs reliably.
 
