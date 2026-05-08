@@ -2,6 +2,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import SetParametersResult
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseStamped
 
@@ -88,6 +89,7 @@ class XArmControllerNode(Node):
         self.release_timeout_s = float(self.get_parameter('release_timeout_s').value)
         self.release_use_force_magnitude = bool(self.get_parameter('release_use_force_magnitude').value)
         self.release_poll_dt_s = float(self.get_parameter('release_poll_dt_s').value)
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
         # ===== Latest pose cache =====
         self.latest_hand_pose = None
@@ -174,6 +176,47 @@ class XArmControllerNode(Node):
             '/return_instrument_to_source, /open_gripper, /close_gripper, '
             '/wait_for_release, /retreat_after_release'
         )
+
+    def _on_set_parameters(self, parameters):
+        updates = {}
+
+        for parameter in parameters:
+            if parameter.name == 'speed':
+                value = float(parameter.value)
+                if value <= 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='speed must be greater than 0.0'
+                    )
+                updates['speed'] = value
+
+            elif parameter.name == 'acc':
+                value = float(parameter.value)
+                if value <= 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='acc must be greater than 0.0'
+                    )
+                updates['acc'] = value
+
+            elif parameter.name == 'wait_for_finish':
+                updates['wait_for_finish'] = bool(parameter.value)
+
+        if 'speed' in updates:
+            self.speed = updates['speed']
+            self.get_logger().info(f'Updated speed to {self.speed} mm/s')
+
+        if 'acc' in updates:
+            self.acc = updates['acc']
+            self.get_logger().info(f'Updated acc to {self.acc} mm/s^2')
+
+        if 'wait_for_finish' in updates:
+            self.wait_for_finish = updates['wait_for_finish']
+            self.get_logger().info(
+                f'Updated wait_for_finish to {self.wait_for_finish}'
+            )
+
+        return SetParametersResult(successful=True)
 
     def _init_robot(self):
         self.get_logger().info('Initializing robot and gripper...')
