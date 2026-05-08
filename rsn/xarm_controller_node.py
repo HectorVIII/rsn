@@ -84,10 +84,14 @@ class XArmControllerNode(Node):
 
         self.release_wait_seconds = float(self.get_parameter('release_wait_seconds').value)
         self.retreat_z_offset_mm = float(self.get_parameter('retreat_z_offset_mm').value)
-        self.release_force_threshold_n = float(self.get_parameter('release_force_threshold_n').value)
+        self.release_force_threshold_n = float(
+            self.get_parameter('release_force_threshold_n').value
+        )
         self.release_hold_time_s = float(self.get_parameter('release_hold_time_s').value)
         self.release_timeout_s = float(self.get_parameter('release_timeout_s').value)
-        self.release_use_force_magnitude = bool(self.get_parameter('release_use_force_magnitude').value)
+        self.release_use_force_magnitude = bool(
+            self.get_parameter('release_use_force_magnitude').value
+        )
         self.release_poll_dt_s = float(self.get_parameter('release_poll_dt_s').value)
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
@@ -202,6 +206,45 @@ class XArmControllerNode(Node):
             elif parameter.name == 'wait_for_finish':
                 updates['wait_for_finish'] = bool(parameter.value)
 
+            elif parameter.name == 'release_force_threshold_n':
+                value = float(parameter.value)
+                if value <= 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='release_force_threshold_n must be greater than 0.0'
+                    )
+                updates['release_force_threshold_n'] = value
+
+            elif parameter.name == 'release_hold_time_s':
+                value = float(parameter.value)
+                if value < 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='release_hold_time_s must be greater than or equal to 0.0'
+                    )
+                updates['release_hold_time_s'] = value
+
+            elif parameter.name == 'release_timeout_s':
+                value = float(parameter.value)
+                if value <= 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='release_timeout_s must be greater than 0.0'
+                    )
+                updates['release_timeout_s'] = value
+
+            elif parameter.name == 'release_use_force_magnitude':
+                updates['release_use_force_magnitude'] = bool(parameter.value)
+
+            elif parameter.name == 'release_poll_dt_s':
+                value = float(parameter.value)
+                if value <= 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='release_poll_dt_s must be greater than 0.0'
+                    )
+                updates['release_poll_dt_s'] = value
+
         if 'speed' in updates:
             self.speed = updates['speed']
             self.get_logger().info(f'Updated speed to {self.speed} mm/s')
@@ -214,6 +257,38 @@ class XArmControllerNode(Node):
             self.wait_for_finish = updates['wait_for_finish']
             self.get_logger().info(
                 f'Updated wait_for_finish to {self.wait_for_finish}'
+            )
+
+        if 'release_force_threshold_n' in updates:
+            self.release_force_threshold_n = updates['release_force_threshold_n']
+            self.get_logger().info(
+                f'Updated release force threshold to '
+                f'{self.release_force_threshold_n} N'
+            )
+
+        if 'release_hold_time_s' in updates:
+            self.release_hold_time_s = updates['release_hold_time_s']
+            self.get_logger().info(
+                f'Updated release hold time to {self.release_hold_time_s} s'
+            )
+
+        if 'release_timeout_s' in updates:
+            self.release_timeout_s = updates['release_timeout_s']
+            self.get_logger().info(
+                f'Updated release timeout to {self.release_timeout_s} s'
+            )
+
+        if 'release_use_force_magnitude' in updates:
+            self.release_use_force_magnitude = updates['release_use_force_magnitude']
+            self.get_logger().info(
+                f'Updated release use force magnitude to '
+                f'{self.release_use_force_magnitude}'
+            )
+
+        if 'release_poll_dt_s' in updates:
+            self.release_poll_dt_s = updates['release_poll_dt_s']
+            self.get_logger().info(
+                f'Updated release poll dt to {self.release_poll_dt_s} s'
             )
 
         return SetParametersResult(successful=True)
@@ -598,23 +673,43 @@ class XArmControllerNode(Node):
         try:
             code = self.arm.set_ft_sensor_enable(1)
             self.get_logger().info(f'set_ft_sensor_enable(1) -> code={code}')
+            if code != 0:
+                response.success = False
+                response.message = (
+                    f'Release sensor error: failed to enable FT sensor, '
+                    f'code={code}'
+                )
+                self.get_logger().error(response.message)
+                return response
             time.sleep(0.2)
 
             code = self.arm.set_ft_sensor_zero()
             self.get_logger().info(f'set_ft_sensor_zero() -> code={code}')
+            if code != 0:
+                response.success = False
+                response.message = (
+                    f'Release sensor error: failed to zero FT sensor, '
+                    f'code={code}'
+                )
+                self.get_logger().error(response.message)
+                return response
             time.sleep(0.2)
 
             start_time = time.time()
             trigger_start_time = None
+            valid_read_seen = False
 
             while time.time() - start_time < self.release_timeout_s:
                 code, ft = self.arm.get_ft_sensor_data()
 
                 if code != 0 or ft is None or len(ft) < 6:
-                    self.get_logger().warn(f'Failed to read FT data, code={code}, ft={ft}')
+                    self.get_logger().warn(
+                        f'Failed to read FT data, code={code}, ft={ft}'
+                    )
                     time.sleep(self.release_poll_dt_s)
                     continue
 
+                valid_read_seen = True
                 fx = float(ft[0])
                 fy = float(ft[1])
                 fz = float(ft[2])
@@ -639,15 +734,18 @@ class XArmControllerNode(Node):
                     if trigger_start_time is None:
                         trigger_start_time = time.time()
                         self.get_logger().info(
-                            f'Release threshold reached: {signal_name}={release_signal:.2f} >= '
-                            f'{self.release_force_threshold_n:.2f}. Starting hold timer...'
+                            'Release threshold reached: '
+                            f'{signal_name}={release_signal:.2f} >= '
+                            f'{self.release_force_threshold_n:.2f}. '
+                            'Starting hold timer...'
                         )
                     else:
                         held_time = time.time() - trigger_start_time
                         if held_time >= self.release_hold_time_s:
                             response.success = True
                             response.message = (
-                                f'Release triggered: {signal_name}={release_signal:.2f} '
+                                'Release detected: '
+                                f'{signal_name}={release_signal:.2f} '
                                 f'>= {self.release_force_threshold_n:.2f} '
                                 f'for {held_time:.2f} s'
                             )
@@ -663,15 +761,21 @@ class XArmControllerNode(Node):
                 time.sleep(self.release_poll_dt_s)
 
             response.success = False
-            response.message = (
-                f'Release timeout after {self.release_timeout_s:.2f} s'
-            )
+            if valid_read_seen:
+                response.message = (
+                    f'Release timeout after {self.release_timeout_s:.2f} s'
+                )
+            else:
+                response.message = (
+                    'Release sensor error: no valid FT data received before '
+                    f'{self.release_timeout_s:.2f} s timeout'
+                )
             self.get_logger().warn(response.message)
             return response
 
         except Exception as e:
             response.success = False
-            response.message = f'Exception while waiting for release: {e}'
+            response.message = f'Release sensor error: {e}'
             self.get_logger().error(response.message)
             return response
 

@@ -138,6 +138,12 @@ Services:
 - `/open_gripper` (`std_srvs/Trigger`)
 - `/close_gripper` (`std_srvs/Trigger`)
 
+Runtime parameters exposed to FlexBE through `/xarm_controller_node/set_parameters`:
+
+- `speed`, `acc`
+- `release_force_threshold_n`, `release_hold_time_s`, `release_timeout_s`
+- `release_use_force_magnitude`, `release_poll_dt_s`
+
 ## Notes For FlexBE Integration
 
 See `docs/flexbe_migration_plan.md` for the planned migration path.
