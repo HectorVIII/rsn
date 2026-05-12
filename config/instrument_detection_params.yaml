@@ -36,4 +36,4 @@
     # Viewer and node behavior
     show_viewer: true
     publish_once_then_stop: true
-    exit_delay_after_publish: 0.5
+    exit_delay_after_publish: 0.2
