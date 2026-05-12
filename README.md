@@ -5,13 +5,17 @@ ROS 2 Python package for a voice-guided surgical instrument handover demo.
 The FlexBE-controlled pipeline is:
 
 1. `voice_command_node` listens for a spoken instrument request and publishes a target class.
-2. `instrument_detection_node` detects the requested instrument with YOLO and ZED, publishes one grasp pose, then exits to release the camera.
-3. `xarm_controller_node` moves the xArm to grasp and lift the instrument.
-4. `zed_hand_node` runs as an idle low-level provider. FlexBE starts hand
-   detection after the instrument detector exits.
-5. `zed_hand_node` opens ZED on demand, detects the handover point with
+2. `instrument_detection_node` runs as an idle low-level provider. FlexBE starts
+   instrument detection after a target is received.
+3. `instrument_detection_node` opens ZED on demand, detects the requested
+   instrument with YOLO, publishes one grasp pose, then releases ZED and
+   returns to idle.
+4. `xarm_controller_node` moves the xArm to grasp and lift the instrument.
+5. `zed_hand_node` runs as an idle low-level provider. FlexBE starts hand
+   detection after instrument detection releases ZED.
+6. `zed_hand_node` opens ZED on demand, detects the handover point with
    MediaPipe, publishes one hand pose, then releases ZED and returns to idle.
-6. `xarm_controller_node` moves to the handover point and uses the force-torque sensor to detect release.
+7. `xarm_controller_node` moves to the handover point and uses the force-torque sensor to detect release.
 
 ## Environment
 

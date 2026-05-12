@@ -59,7 +59,8 @@ class InstrumentDetectionNode(Node):
         self.declare_parameter('show_viewer', True)
         self.declare_parameter('publish_once_then_stop', True)
         self.declare_parameter('target_stable_frames', 8)   # Number of consecutive frames the target must be detected and stable before publishing the grasp pose.
-        self.declare_parameter('exit_delay_after_publish', 0.5) # Time in seconds to wait after publishing the grasp pose before shutting down the node.
+        # Seconds to wait after publishing before releasing ZED.
+        self.declare_parameter('exit_delay_after_publish', 0.5)
 
         self.model_path = str(self.get_parameter('model_path').value).strip()
         self.camera_serial = int(self.get_parameter('camera_serial').value)
@@ -127,6 +128,7 @@ class InstrumentDetectionNode(Node):
         self.detection_enabled = False
         self.published_once = False
         self.shutdown_requested = False
+        self.zed_open = False
 
         self.last_center_xy: Optional[np.ndarray] = None
         self.last_angle_deg: Optional[float] = None
@@ -143,12 +145,13 @@ class InstrumentDetectionNode(Node):
 
         self.model = YOLO(self.model_path)
 
-        self.zed = sl.Camera()
+        self.zed = None
         self.runtime = sl.RuntimeParameters()
         self.image_zed = sl.Mat()
-
-        self._open_zed()
-        self.fx, self.fy, self.cx, self.cy = self._get_left_camera_intrinsics()
+        self.fx = None
+        self.fy = None
+        self.cx = None
+        self.cy = None
 
         timer_period = 1.0 / float(self.camera_fps)
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -157,7 +160,10 @@ class InstrumentDetectionNode(Node):
         self.get_logger().info(f'Model path: {self.model_path}')
         self.get_logger().info(f'Voice target topic: {self.voice_target_topic}')
         self.get_logger().info(f'Publish topic: {self.publish_topic}')
-        self.get_logger().info('Mode: wait for target + /start_instrument_detection, then publish grasp pose and exit.')
+        self.get_logger().info(
+            'Mode: idle until target + /start_instrument_detection, '
+            'then open ZED, publish one grasp pose, release ZED, and return to idle.'
+        )
 
     # ============================================================
     # ROS callbacks
@@ -172,6 +178,13 @@ class InstrumentDetectionNode(Node):
             response.success = False
             response.message = 'No voice target received yet.'
             self.get_logger().warn(response.message)
+            return response
+
+        ok, message = self._open_zed()
+        if not ok:
+            response.success = False
+            response.message = message
+            self.get_logger().error(message)
             return response
 
         self.detection_enabled = True
@@ -194,6 +207,12 @@ class InstrumentDetectionNode(Node):
         if self.published_once and self.publish_once_then_stop:
             return
 
+        if not self.detection_enabled:
+            return
+
+        if not self.zed_open or self.zed is None:
+            return
+
         if self.zed.grab(self.runtime) != sl.ERROR_CODE.SUCCESS:
             return
 
@@ -202,13 +221,6 @@ class InstrumentDetectionNode(Node):
         frame_bgr = cv2.cvtColor(frame_bgra, cv2.COLOR_BGRA2BGR)
 
         display = frame_bgr.copy()
-
-        if not self.detection_enabled:
-            if self.show_viewer:
-                self._draw_idle_overlay(display)
-                cv2.imshow('Instrument Detection Viewer', display)
-                self._handle_key()
-            return
 
         if self.current_target_class is None:
             if self.show_viewer:
@@ -309,14 +321,16 @@ class InstrumentDetectionNode(Node):
             self.shutdown_requested = True
 
             self.get_logger().info(
-                f'Waiting {self.exit_delay_after_publish:.2f}s before shutdown to ensure pose is delivered...'
+                f'Waiting {self.exit_delay_after_publish:.2f}s before '
+                'releasing ZED to ensure pose is delivered...'
             )
             time.sleep(self.exit_delay_after_publish)
 
-            self.get_logger().info('Detection finished. Releasing ZED camera and exiting node...')
-            self.destroy_node()
-            if rclpy.ok():
-                rclpy.shutdown()
+            self.get_logger().info(
+                'Detection finished. Releasing ZED camera and returning to idle.'
+            )
+            self._close_zed()
+            self.shutdown_requested = False
             return
 
     # ============================================================
@@ -450,6 +464,10 @@ class InstrumentDetectionNode(Node):
     # Geometry helpers
     # ============================================================
     def _open_zed(self):
+        if self.zed_open:
+            return True, 'ZED camera is already open.'
+
+        self.zed = sl.Camera()
         init = sl.InitParameters()
         init.set_from_serial_number(self.camera_serial)
         init.camera_resolution = sl.RESOLUTION.HD720
@@ -460,9 +478,33 @@ class InstrumentDetectionNode(Node):
 
         status = self.zed.open(init)
         if status != sl.ERROR_CODE.SUCCESS:
-            raise RuntimeError(f'Failed to open ZED camera: {status}')
+            self.zed = None
+            return False, f'Failed to open ZED camera: {status}'
 
+        self.zed_open = True
+        self.fx, self.fy, self.cx, self.cy = self._get_left_camera_intrinsics()
         self.get_logger().info('ZED camera opened successfully.')
+        return True, 'ZED camera opened successfully.'
+
+    def _close_zed(self):
+        if not self.zed_open or self.zed is None:
+            self.zed_open = False
+            self.zed = None
+            return
+
+        self.get_logger().info('Closing ZED camera...')
+        try:
+            self.zed.close()
+        except Exception as exc:  # pylint: disable=broad-except
+            self.get_logger().warn(f'Exception during ZED shutdown: {exc}')
+        finally:
+            self.zed_open = False
+            self.zed = None
+            self.fx = None
+            self.fy = None
+            self.cx = None
+            self.cy = None
+            self.get_logger().info('ZED camera closed.')
 
     def _get_left_camera_intrinsics(self):
         info = self.zed.get_camera_information()
@@ -596,11 +638,7 @@ class InstrumentDetectionNode(Node):
         except Exception:
             pass
 
-        try:
-            if hasattr(self, 'zed'):
-                self.zed.close()
-        except Exception as e:
-            self.get_logger().warn(f'Exception during ZED shutdown: {e}')
+        self._close_zed()
 
         super().destroy_node()
 
