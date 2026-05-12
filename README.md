@@ -131,6 +131,7 @@ Services:
 - `/move_to_p1` (`std_srvs/Trigger`)
 - `/move_to_instrument` (`std_srvs/Trigger`)
 - `/lift_after_grasp` (`std_srvs/Trigger`)
+- `/grasp_and_lift` (`std_srvs/Trigger`)
 - `/return_instrument_to_source` (`std_srvs/Trigger`)
 - `/move_to_hand` (`std_srvs/Trigger`)
 - `/wait_for_release` (`std_srvs/Trigger`)

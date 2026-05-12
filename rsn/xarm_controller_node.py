@@ -26,6 +26,8 @@ class XArmControllerNode(Node):
         self.declare_parameter('open_position', 500)
         self.declare_parameter('close_position', 0)
         self.declare_parameter('gripper_speed', 2000)
+        self.declare_parameter('grasp_lift_gripper_wait', False)
+        self.declare_parameter('grasp_lift_settle_delay_s', 0.3)
 
         # ===== Hand-guided motion parameters =====
         self.declare_parameter('hand_topic', '/right_hand_pose_base')
@@ -66,6 +68,12 @@ class XArmControllerNode(Node):
         self.open_position = int(self.get_parameter('open_position').value)
         self.close_position = int(self.get_parameter('close_position').value)
         self.gripper_speed = int(self.get_parameter('gripper_speed').value)
+        self.grasp_lift_gripper_wait = bool(
+            self.get_parameter('grasp_lift_gripper_wait').value
+        )
+        self.grasp_lift_settle_delay_s = float(
+            self.get_parameter('grasp_lift_settle_delay_s').value
+        )
 
         self.hand_topic = str(self.get_parameter('hand_topic').value)
         self.hand_hover_offset_mm = float(self.get_parameter('hand_hover_offset_mm').value)
@@ -112,6 +120,12 @@ class XArmControllerNode(Node):
         self.get_logger().info(f'Instrument hover offset: {self.instrument_hover_offset_mm} mm')
         self.get_logger().info(f'Release wait seconds: {self.release_wait_seconds}')
         self.get_logger().info(f'Retreat z offset: {self.retreat_z_offset_mm} mm')
+        self.get_logger().info(
+            f'Grasp-lift gripper wait: {self.grasp_lift_gripper_wait}'
+        )
+        self.get_logger().info(
+            f'Grasp-lift settle delay: {self.grasp_lift_settle_delay_s} s'
+        )
         self.get_logger().info(f'Release force threshold: {self.release_force_threshold_n} N')
         self.get_logger().info(f'Release hold time: {self.release_hold_time_s} s')
         self.get_logger().info(f'Release timeout: {self.release_timeout_s} s')
@@ -156,6 +170,9 @@ class XArmControllerNode(Node):
         self.lift_after_grasp_service = self.create_service(
             Trigger, 'lift_after_grasp', self.lift_after_grasp_callback
         )
+        self.grasp_and_lift_service = self.create_service(
+            Trigger, 'grasp_and_lift', self.grasp_and_lift_callback
+        )
         self.return_instrument_to_source_service = self.create_service(
             Trigger,
             'return_instrument_to_source',
@@ -177,6 +194,7 @@ class XArmControllerNode(Node):
         self.get_logger().info(
             'Services ready: /move_to_p0, /move_to_p1, /move_to_hand, '
             '/move_to_instrument, /lift_after_grasp, '
+            '/grasp_and_lift, '
             '/return_instrument_to_source, /open_gripper, /close_gripper, '
             '/wait_for_release, /retreat_after_release'
         )
@@ -205,6 +223,18 @@ class XArmControllerNode(Node):
 
             elif parameter.name == 'wait_for_finish':
                 updates['wait_for_finish'] = bool(parameter.value)
+
+            elif parameter.name == 'grasp_lift_gripper_wait':
+                updates['grasp_lift_gripper_wait'] = bool(parameter.value)
+
+            elif parameter.name == 'grasp_lift_settle_delay_s':
+                value = float(parameter.value)
+                if value < 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='grasp_lift_settle_delay_s must be >= 0.0'
+                    )
+                updates['grasp_lift_settle_delay_s'] = value
 
             elif parameter.name == 'release_force_threshold_n':
                 value = float(parameter.value)
@@ -257,6 +287,22 @@ class XArmControllerNode(Node):
             self.wait_for_finish = updates['wait_for_finish']
             self.get_logger().info(
                 f'Updated wait_for_finish to {self.wait_for_finish}'
+            )
+
+        if 'grasp_lift_gripper_wait' in updates:
+            self.grasp_lift_gripper_wait = updates['grasp_lift_gripper_wait']
+            self.get_logger().info(
+                f'Updated grasp-lift gripper wait to '
+                f'{self.grasp_lift_gripper_wait}'
+            )
+
+        if 'grasp_lift_settle_delay_s' in updates:
+            self.grasp_lift_settle_delay_s = updates[
+                'grasp_lift_settle_delay_s'
+            ]
+            self.get_logger().info(
+                f'Updated grasp-lift settle delay to '
+                f'{self.grasp_lift_settle_delay_s} s'
             )
 
         if 'release_force_threshold_n' in updates:
@@ -357,18 +403,19 @@ class XArmControllerNode(Node):
         except Exception as e:
             return False, f'Exception while moving arm: {e}'
 
-    def _move_gripper(self, target_pos):
+    def _move_gripper(self, target_pos, wait=None):
         try:
             self._ensure_robot_ready()
+            wait_for_gripper = self.wait_for_finish if wait is None else bool(wait)
 
             self.get_logger().info(
                 f'Moving gripper to position={target_pos}, '
-                f'speed={self.gripper_speed}, wait={self.wait_for_finish}'
+                f'speed={self.gripper_speed}, wait={wait_for_gripper}'
             )
 
             code = self.arm.set_gripper_position(
                 target_pos,
-                wait=self.wait_for_finish,
+                wait=wait_for_gripper,
                 speed=self.gripper_speed
             )
 
@@ -621,6 +668,49 @@ class XArmControllerNode(Node):
             self.get_logger().info(msg)
         else:
             self.get_logger().error(msg)
+
+        return response
+
+    def grasp_and_lift_callback(self, request, response):
+        self.get_logger().info('GRASP_AND_LIFT command received')
+
+        pose, build_msg = self._build_lift_after_grasp_pose()
+        self.get_logger().info(build_msg)
+
+        if pose is None:
+            response.success = False
+            response.message = build_msg
+            self.get_logger().error(build_msg)
+            return response
+
+        self.get_logger().info('Stage 1/2: close gripper for grasp-and-lift')
+        ok_gripper, msg_gripper = self._move_gripper(
+            self.close_position,
+            wait=self.grasp_lift_gripper_wait
+        )
+        if not ok_gripper:
+            response.success = False
+            response.message = f'Failed to close gripper: {msg_gripper}'
+            self.get_logger().error(response.message)
+            return response
+        self.get_logger().info(msg_gripper)
+
+        if self.grasp_lift_settle_delay_s > 0.0:
+            self.get_logger().info(
+                f'Waiting {self.grasp_lift_settle_delay_s:.2f}s '
+                'before lifting grasped instrument'
+            )
+            time.sleep(self.grasp_lift_settle_delay_s)
+
+        self.get_logger().info('Stage 2/2: lift after grasp')
+        ok_lift, msg_lift = self._move_to_pose(pose)
+        response.success = ok_lift
+        response.message = msg_lift
+
+        if ok_lift:
+            self.get_logger().info(msg_lift)
+        else:
+            self.get_logger().error(msg_lift)
 
         return response
 

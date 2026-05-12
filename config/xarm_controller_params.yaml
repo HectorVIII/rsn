@@ -18,6 +18,8 @@
     open_position: 500
     close_position: 0
     gripper_speed: 2000
+    grasp_lift_gripper_wait: false
+    grasp_lift_settle_delay_s: 0.3
 
     # ===== Hand-guided motion =====
     hand_topic: "/right_hand_pose_base"
