@@ -43,7 +43,8 @@ class ZedHandNode(Node):
         self.declare_parameter('depth_min_valid_points', 5)         # Minimum number of valid depth points required in the window to consider the 3D point valid    
 
         self.declare_parameter('publish_topic', '/right_hand_pose_base')
-        self.declare_parameter('exit_delay_after_publish', 3.0)     # Seconds to wait after publishing before exiting, to ensure message is sent before shutdown
+        # Seconds to wait after publishing before releasing ZED.
+        self.declare_parameter('exit_delay_after_publish', 3.0)
         self.declare_parameter('show_viewer', True)
 
         self.camera_fps = int(self.get_parameter('camera_fps').value)
@@ -82,7 +83,8 @@ class ZedHandNode(Node):
         )
 
         # ===== ZED objects =====
-        self.zed = sl.Camera()
+        self.zed = None
+        self.zed_open = False
         self.runtime_params = sl.RuntimeParameters()
         self.image = sl.Mat()
         self.point_cloud = sl.Mat()
@@ -115,9 +117,6 @@ class ZedHandNode(Node):
         self.last_hand_score = 0.0
         self.last_point_count = 0
 
-        # ===== Init camera =====
-        self._init_zed()
-
         # ===== Timer =====
         timer_period = 1.0 / float(self.camera_fps)
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -131,10 +130,17 @@ class ZedHandNode(Node):
         self.get_logger().info('Target point: index fingertip (landmark 8)')
         self.get_logger().info(f'Depth window radius: {self.depth_window_radius}')
         self.get_logger().info(f'Show viewer: {self.show_viewer}')
-        self.get_logger().info('Mode: wait for /start_hand_detection, then publish once and exit.')
+        self.get_logger().info(
+            'Mode: idle until /start_hand_detection, then open ZED, '
+            'publish once, release ZED, and return to idle.'
+        )
 
-    def _init_zed(self):
+    def _open_zed(self):
+        if self.zed_open:
+            return True, 'ZED camera is already open.'
+
         self.get_logger().info('Opening ZED camera...')
+        self.zed = sl.Camera()
 
         init_params = sl.InitParameters()
         init_params.camera_resolution = sl.RESOLUTION.HD720
@@ -145,13 +151,41 @@ class ZedHandNode(Node):
 
         status = self.zed.open(init_params)
         if status != sl.ERROR_CODE.SUCCESS:
-            raise RuntimeError(f'Failed to open ZED camera: {repr(status)}')
+            self.zed = None
+            return False, f'Failed to open ZED camera: {repr(status)}'
 
+        self.zed_open = True
         self.get_logger().info('ZED camera opened successfully.')
+        return True, 'ZED camera opened successfully.'
+
+    def _close_zed(self):
+        if not self.zed_open or self.zed is None:
+            self.zed_open = False
+            self.zed = None
+            return
+
+        self.get_logger().info('Closing ZED camera...')
+        try:
+            self.zed.close()
+        except Exception as exc:  # pylint: disable=broad-except
+            self.get_logger().warn(f'Exception during ZED shutdown: {exc}')
+        finally:
+            self.zed_open = False
+            self.zed = None
+            self.get_logger().info('ZED camera closed.')
 
     def start_hand_detection_callback(self, request, response):
         """Enable hand detection when the start service is called."""
         self.get_logger().info('START_HAND_DETECTION command received')
+
+        ok, message = self._open_zed()
+        if not ok:
+            response.success = False
+            response.message = message
+            self.get_logger().error(message)
+            return response
+
+        self.published_once = False
         self.detection_enabled = True
         self._reset_stability()
         response.success = True
@@ -161,7 +195,10 @@ class ZedHandNode(Node):
     def timer_callback(self):
         """Process each frame, detect the hand, and publish once when stable."""
 
-        if self.published_once:
+        if self.published_once or not self.detection_enabled:
+            return
+
+        if not self.zed_open or self.zed is None:
             return
 
         if self.zed.grab(self.runtime_params) != sl.ERROR_CODE.SUCCESS:
@@ -171,18 +208,6 @@ class ZedHandNode(Node):
         frame = self.image.get_data().copy()
         if frame is not None and len(frame.shape) == 3 and frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-
-        # Idle mode: wait for explicit start signal
-        if not self.detection_enabled:
-            if self.show_viewer and frame is not None:
-                self._draw_idle_overlay(frame)
-                cv2.imshow('ZED Right Hand Viewer', frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == 27 or key == ord('q'):
-                    self.get_logger().info('Viewer closed by user. Exiting node...')
-                    self.destroy_node()
-                    rclpy.shutdown()
-            return
 
         self.zed.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
 
@@ -247,9 +272,11 @@ class ZedHandNode(Node):
                     cv2.waitKey(1)
 
                 time.sleep(self.exit_delay_after_publish)
-                self.get_logger().info('Publish completed. Exiting node...')
-                self.destroy_node()
-                rclpy.shutdown()
+                self.get_logger().info(
+                    'Publish completed. Releasing ZED camera and returning to idle.'
+                )
+                self.detection_enabled = False
+                self._close_zed()
                 return
 
         if self.show_viewer and annotated_frame is not None:
@@ -580,11 +607,7 @@ class ZedHandNode(Node):
         except Exception as e:
             self.get_logger().warn(f'Exception during MediaPipe shutdown: {e}')
 
-        try:
-            if hasattr(self, 'zed'):
-                self.zed.close()
-        except Exception as e:
-            self.get_logger().warn(f'Exception during ZED shutdown: {e}')
+        self._close_zed()
 
         super().destroy_node()
 

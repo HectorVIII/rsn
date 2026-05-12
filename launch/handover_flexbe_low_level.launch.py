@@ -24,6 +24,11 @@ def generate_launch_description():
         'config',
         'voice_command_params.yaml'
     )
+    zed_hand_params_path = os.path.join(
+        package_share_dir,
+        'config',
+        'zed_hand_params.yaml'
+    )
 
     return LaunchDescription([
         Node(
@@ -46,5 +51,12 @@ def generate_launch_description():
             name='voice_command_node',
             output='screen',
             parameters=[voice_command_params_path]
+        ),
+        Node(
+            package='rsn',
+            executable='zed_hand_node',
+            name='zed_hand_node',
+            output='screen',
+            parameters=[zed_hand_params_path]
         ),
     ])

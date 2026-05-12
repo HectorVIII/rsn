@@ -7,8 +7,10 @@ The FlexBE-controlled pipeline is:
 1. `voice_command_node` listens for a spoken instrument request and publishes a target class.
 2. `instrument_detection_node` detects the requested instrument with YOLO and ZED, publishes one grasp pose, then exits to release the camera.
 3. `xarm_controller_node` moves the xArm to grasp and lift the instrument.
-4. The FlexBE behavior starts `zed_hand_node` after the instrument detector exits.
-5. `zed_hand_node` detects the handover point with MediaPipe and ZED, then publishes one hand pose.
+4. `zed_hand_node` runs as an idle low-level provider. FlexBE starts hand
+   detection after the instrument detector exits.
+5. `zed_hand_node` opens ZED on demand, detects the handover point with
+   MediaPipe, publishes one hand pose, then releases ZED and returns to idle.
 6. `xarm_controller_node` moves to the handover point and uses the force-torque sensor to detect release.
 
 ## Environment
@@ -61,7 +63,7 @@ The primary entry point is now the FlexBE behavior
 `rsn_flexbe_behaviors / RSN Handover Demo`.
 
 Terminal 1 starts the low-level RSN providers. This launch intentionally does
-not start `demo_coordinator` or `zed_hand_node`.
+not start `demo_coordinator`.
 
 ```bash
 cd ~/ros2_ws
@@ -80,10 +82,7 @@ ros2 launch flexbe_app flexbe_full.launch.py
 In FlexBE App:
 
 1. Load `rsn_flexbe_behaviors / RSN Handover Demo`.
-2. Keep the default hand-node parameters for real hardware:
-   - `hand_node_package = rsn`
-   - `hand_node_executable = zed_hand_node`
-3. Start execution from the Runtime Control tab.
+2. Start execution from the Runtime Control tab.
 
 The launch files load runtime parameters from `config/*.yaml` through the
 installed package share directory. Rebuild the package after editing config
