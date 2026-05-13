@@ -133,6 +133,8 @@ Services:
 - `/move_to_p0` (`std_srvs/Trigger`)
 - `/move_to_p1` (`std_srvs/Trigger`)
 - `/move_to_instrument` (`std_srvs/Trigger`)
+- `/move_to_instrument_hover` (`std_srvs/Trigger`)
+- `/visual_servo_to_instrument` (`std_srvs/Trigger`)
 - `/lift_after_grasp` (`std_srvs/Trigger`)
 - `/grasp_and_lift` (`std_srvs/Trigger`)
 - `/return_instrument_to_source` (`std_srvs/Trigger`)

@@ -167,6 +167,16 @@ class XArmControllerNode(Node):
         self.move_to_instrument_service = self.create_service(
             Trigger, 'move_to_instrument', self.move_to_instrument_callback
         )
+        self.move_to_instrument_hover_service = self.create_service(
+            Trigger,
+            'move_to_instrument_hover',
+            self.move_to_instrument_hover_callback
+        )
+        self.visual_servo_to_instrument_service = self.create_service(
+            Trigger,
+            'visual_servo_to_instrument',
+            self.visual_servo_to_instrument_callback
+        )
         self.lift_after_grasp_service = self.create_service(
             Trigger, 'lift_after_grasp', self.lift_after_grasp_callback
         )
@@ -194,6 +204,7 @@ class XArmControllerNode(Node):
         self.get_logger().info(
             'Services ready: /move_to_p0, /move_to_p1, /move_to_hand, '
             '/move_to_instrument, /lift_after_grasp, '
+            '/move_to_instrument_hover, /visual_servo_to_instrument, '
             '/grasp_and_lift, '
             '/return_instrument_to_source, /open_gripper, /close_gripper, '
             '/wait_for_release, /retreat_after_release'
@@ -647,7 +658,61 @@ class XArmControllerNode(Node):
             self.get_logger().error(msg_target)
 
         return response
-    
+
+    def move_to_instrument_hover_callback(self, request, response):
+        self.get_logger().info('MOVE_TO_INSTRUMENT_HOVER command received')
+
+        hover_pose, target_pose, build_msg = self._build_instrument_approach_poses()
+        self.get_logger().info(build_msg)
+
+        if hover_pose is None or target_pose is None:
+            response.success = False
+            response.message = build_msg
+            self.get_logger().error(build_msg)
+            return response
+
+        ok_hover, msg_hover = self._move_to_pose(hover_pose)
+        response.success = ok_hover
+        response.message = msg_hover
+
+        if ok_hover:
+            self.last_instrument_hover_pose = list(hover_pose)
+            self.last_instrument_target_pose = list(target_pose)
+            self.get_logger().info(msg_hover)
+        else:
+            self.get_logger().error(msg_hover)
+
+        return response
+
+    def visual_servo_to_instrument_callback(self, request, response):
+        self.get_logger().info('VISUAL_SERVO_TO_INSTRUMENT command received')
+
+        _, target_pose, build_msg = self._build_instrument_approach_poses()
+        self.get_logger().info(build_msg)
+
+        if target_pose is None:
+            if self.last_instrument_target_pose is None:
+                response.success = False
+                response.message = build_msg
+                self.get_logger().error(build_msg)
+                return response
+            target_pose = list(self.last_instrument_target_pose)
+            self.get_logger().warn(
+                'Using cached instrument target pose for visual servo placeholder.'
+            )
+
+        ok_target, msg_target = self._move_to_pose(target_pose)
+        response.success = ok_target
+        response.message = msg_target
+
+        if ok_target:
+            self.last_instrument_target_pose = list(target_pose)
+            self.get_logger().info(msg_target)
+        else:
+            self.get_logger().error(msg_target)
+
+        return response
+
     def lift_after_grasp_callback(self, request, response):
         self.get_logger().info('LIFT_AFTER_GRASP command received')
 
