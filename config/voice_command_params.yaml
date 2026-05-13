@@ -3,6 +3,7 @@
     # ROS topics
     publish_topic: "/voice_target_instrument"
     raw_text_topic: "/voice_recognized_text"
+    status_topic: "/voice_command_status"
 
     # Audio recording
     sample_rate: 16000

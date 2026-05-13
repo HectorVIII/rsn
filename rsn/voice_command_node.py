@@ -31,6 +31,7 @@ class VoiceCommandNode(Node):
         self.declare_parameter('enable_debug_log', True)
         self.declare_parameter('publish_raw_text', True)
         self.declare_parameter('raw_text_topic', '/voice_recognized_text')
+        self.declare_parameter('status_topic', '/voice_command_status')
 
         # ===== Read parameters =====
         self.publish_topic = str(self.get_parameter('publish_topic').value)
@@ -48,10 +49,12 @@ class VoiceCommandNode(Node):
         self.enable_debug_log = bool(self.get_parameter('enable_debug_log').value)
         self.publish_raw_text = bool(self.get_parameter('publish_raw_text').value)
         self.raw_text_topic = str(self.get_parameter('raw_text_topic').value)
+        self.status_topic = str(self.get_parameter('status_topic').value)
 
         # ===== Publishers =====
         self.target_pub = self.create_publisher(String, self.publish_topic, 10)
         self.raw_text_pub = self.create_publisher(String, self.raw_text_topic, 10)
+        self.status_pub = self.create_publisher(String, self.status_topic, 10)
 
         # ===== Voice state =====
         self.audio_queue = queue.Queue()
@@ -76,6 +79,7 @@ class VoiceCommandNode(Node):
         self.get_logger().info('voice_command_node started.')
         self.get_logger().info(f'Publish topic: {self.publish_topic}')
         self.get_logger().info(f'Raw text topic: {self.raw_text_topic}')
+        self.get_logger().info(f'Status topic: {self.status_topic}')
         self.get_logger().info(f'Sample rate: {self.sample_rate}')
         self.get_logger().info(f'Block duration: {self.block_duration}')
         self.get_logger().info(f'Silence threshold: {self.silence_threshold}')
@@ -90,6 +94,12 @@ class VoiceCommandNode(Node):
     def log_debug(self, text: str) -> None:
         if self.enable_debug_log:
             self.get_logger().info(text)
+
+    def publish_status(self, status: str) -> None:
+        msg = String()
+        msg.data = status
+        self.status_pub.publish(msg)
+        self.log_debug(f'[VOICE_STATUS] {status}')
 
     def _normalize_audio_device(self, value):
         if value is None:
@@ -191,6 +201,7 @@ class VoiceCommandNode(Node):
             device=self.device,
             callback=self.audio_callback,
         ):
+            self.publish_status('VOICE_IDLE')
             for _ in range(max_blocks):
                 if not self.running:
                     return None
@@ -201,6 +212,7 @@ class VoiceCommandNode(Node):
                 if not started:
                     if level > self.silence_threshold:
                         started = True
+                        self.publish_status('VOICE_RECORDING')
                         recorded_chunks.append(chunk)
                         silence_time = 0.0
                 else:
@@ -214,6 +226,7 @@ class VoiceCommandNode(Node):
                             break
 
         if not recorded_chunks:
+            self.publish_status('VOICE_NO_SPEECH')
             return None
 
         return np.concatenate(recorded_chunks, axis=0)
@@ -254,7 +267,9 @@ class VoiceCommandNode(Node):
                 if audio is None:
                     continue
 
+                self.publish_status('VOICE_RECOGNIZING')
                 text = self.recognize_audio(audio)
+                self.publish_status(f'VOICE_RECOGNIZED:{text}')
                 self.publish_raw_text_msg(text)
 
                 result = self.parse_voice_command(text)
@@ -271,18 +286,23 @@ class VoiceCommandNode(Node):
                         continue
 
                     self.publish_target(target_cls)
+                    self.publish_status(f'VOICE_TARGET_PUBLISHED:{target_cls}')
                     self.log_debug(
                         f'[VOICE] command={result["command"]} target={target_cls}'
                     )
                 else:
+                    self.publish_status('VOICE_COMMAND_NOT_PARSED')
                     self.log_debug('[VOICE] No valid command parsed.')
 
             except sr.UnknownValueError:
+                self.publish_status('VOICE_NOT_UNDERSTOOD')
                 self.get_logger().warn('Could not understand audio.')
             except sr.RequestError as e:
+                self.publish_status('VOICE_RECOGNITION_SERVICE_ERROR')
                 self.get_logger().error(f'Speech recognition service error: {e}')
                 time.sleep(0.5)
             except Exception as e:
+                self.publish_status('VOICE_WORKER_ERROR')
                 self.get_logger().error(f'Voice worker error: {e}')
                 time.sleep(0.5)
 
